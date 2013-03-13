@@ -31,8 +31,8 @@ class Cache
 
     /**
      * @param IOInterface $io
-     * @param string      $cacheDir location of the cache
-     * @param string      $whitelist List of characters that are allowed in path names (used in a regex character class)
+     * @param string      $cacheDir   location of the cache
+     * @param string      $whitelist  List of characters that are allowed in path names (used in a regex character class)
      * @param Filesystem  $filesystem optional filesystem instance
      */
     public function __construct(IOInterface $io, $cacheDir, $whitelist = 'a-z0-9.', Filesystem $filesystem = null)
@@ -114,14 +114,25 @@ class Cache
         return false;
     }
 
-    public function gc($ttl)
+    public function gc($ttl, $maxSize)
     {
         $expire = new \DateTime();
         $expire->modify('-'.$ttl.' seconds');
 
-        $finder = Finder::create()->files()->in($this->root)->date('until '.$expire->format('Y-m-d H:i:s'));
+        $finder = $this->getFinder()->date('until '.$expire->format('Y-m-d H:i:s'));
         foreach ($finder as $file) {
             unlink($file->getRealPath());
+        }
+
+        $totalSize = $this->filesystem->size($this->root);
+        if ($totalSize > $maxSize) {
+            $iterator = $this->getFinder()->sortByAccessedTime()->getIterator();
+            while ($totalSize > $maxSize && $iterator->valid()) {
+                $filepath = $iterator->current()->getRealPath();
+                $totalSize -= $this->filesystem->size($filepath);
+                unlink($filepath);
+                $iterator->next();
+            }
         }
 
         return true;
@@ -145,5 +156,10 @@ class Cache
         }
 
         return false;
+    }
+
+    protected function getFinder()
+    {
+        return Finder::create()->in($this->root)->files();
     }
 }

@@ -33,7 +33,8 @@ installed on the system but are not actually installable by composer. This
 includes PHP itself, PHP extensions and some system libraries.
 
 * `php` represents the PHP version of the user, allowing you to apply
-   constraints, e.g. `>=5.4.0`.
+   constraints, e.g. `>=5.4.0`. To require a 64bit version of php, you can
+   require the `php-64bit` package.
 
 * `ext-<name>` allows you to require PHP extensions (includes core
   extensions). Versioning can be quite inconsistent here, so it's often
@@ -62,6 +63,9 @@ you can just add a `version` field:
         "version": "1.0.0"
     }
 
+> **Note:** You should avoid specifying the version field explicitly, because
+> for tags the value must match the tag name.
+
 ### Tags
 
 For every tag that looks like a version, a package version of that tag will be
@@ -76,8 +80,6 @@ Here are a few examples of valid tag names:
     v4.4.4beta2
     v2.0.0-alpha
     v2.0.4-p1
-
-> **Note:** If you specify an explicit version in `composer.json`, the tag name must match the specified version.
 
 ### Branches
 
@@ -114,33 +116,6 @@ on it. It only has an effect on the main project.
 
 If you do not want to commit the lock file and you are using git, add it to
 the `.gitignore`.
-
-## Light-weight distribution packages
-
-Including the tests and other useless information like `.travis.yml` in
-distributed packages is not a good idea.
-
-The `.gitattributes` file is a git specific file like `.gitignore` also living
-at the root directory of your library. It overrides local and global
-configuration (`.git/config` and `~/.gitconfig` respectively) when present and
-tracked by git.
-
-Use `.gitattributes` to prevent unwanted files from bloating the zip
-distribution packages.
-
-    // .gitattributes
-    /Tests export-ignore
-    phpunit.xml.dist export-ignore
-    Resources/doc/ export-ignore
-    .travis.yml export-ignore
-
-Test it by inspecting the zip file generated manually:
-
-    git archive branchName --format zip -o file.zip
-
-> **Note:** Files would be still tracked by git just not included in the
-> distribution. This will only work for GitHub packages installed from
-> dist (i.e. tagged releases) for now.
 
 ## Publishing to a VCS
 

@@ -55,8 +55,8 @@ class FileDownloader implements DownloaderInterface
         $this->filesystem = $filesystem ?: new Filesystem();
         $this->cache = $cache;
 
-        if ($this->cache && !self::$cacheCollected && !rand(0, 50)) {
-            $this->cache->gc($config->get('cache-ttl'));
+        if ($this->cache && !self::$cacheCollected && !mt_rand(0, 50)) {
+            $this->cache->gc($config->get('cache-ttl'), $config->get('cache-files-maxsize'));
         }
         self::$cacheCollected = true;
     }
@@ -106,8 +106,8 @@ class FileDownloader implements DownloaderInterface
                     $this->io->write('    Loading from cache');
                 }
             } catch (TransportException $e) {
-                if (404 === $e->getCode() && 'github.com' === $hostname) {
-                    $message = "\n".'Could not fetch '.$processedUrl.', enter your GitHub credentials to access private repos';
+                if (in_array($e->getCode(), array(404, 403)) && 'github.com' === $hostname && !$this->io->hasAuthentication($hostname)) {
+                    $message = "\n".'Could not fetch '.$processedUrl.', enter your GitHub credentials '.($e->getCode() === 404 ? 'to access private repos' : 'to go over the API rate limit');
                     $gitHubUtil = new GitHub($this->io, $this->config, null, $this->rfs);
                     if (!$gitHubUtil->authorizeOAuth($hostname)
                         && (!$this->io->isInteractive() || !$gitHubUtil->authorizeOAuthInteractively($hostname, $message))
@@ -171,7 +171,10 @@ class FileDownloader implements DownloaderInterface
     {
         $this->io->write("  - Removing <info>" . $package->getName() . "</info> (<comment>" . VersionParser::formatVersion($package) . "</comment>)");
         if (!$this->filesystem->removeDirectory($path)) {
-            throw new \RuntimeException('Could not completely delete '.$path.', aborting.');
+            // retry after a bit on windows since it tends to be touchy with mass removals
+            if (!defined('PHP_WINDOWS_VERSION_BUILD') || (usleep(250) && !$this->filesystem->removeDirectory($path))) {
+                throw new \RuntimeException('Could not completely delete '.$path.', aborting.');
+            }
         }
     }
 

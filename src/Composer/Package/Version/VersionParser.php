@@ -35,7 +35,7 @@ class VersionParser
      */
     public static function parseStability($version)
     {
-        $version = preg_replace('{#[a-f0-9]+$}i', '', $version);
+        $version = preg_replace('{#.+$}i', '', $version);
 
         if ('dev-' === substr($version, 0, 4) || '-dev' === substr($version, -4)) {
             return 'dev';
@@ -128,10 +128,7 @@ class VersionParser
                 if ('stable' === $matches[$index]) {
                     return $version;
                 }
-                $mod = array('{^pl?$}i', '{^rc$}i');
-                $modNormalized = array('patch', 'RC');
-                $version .= '-'.preg_replace($mod, $modNormalized, strtolower($matches[$index]))
-                    . (!empty($matches[$index+1]) ? $matches[$index+1] : '');
+                $version .= '-' . $this->expandStability($matches[$index]) . (!empty($matches[$index+1]) ? $matches[$index+1] : '');
             }
 
             if (!empty($matches[$index+2])) {
@@ -220,7 +217,7 @@ class VersionParser
             $constraints = empty($match[1]) ? '*' : $match[1];
         }
 
-        if (preg_match('{^(dev-[^,\s@]+?|[^,\s@]+?\.x-dev)#[a-f0-9]+$}i', $constraints, $match)) {
+        if (preg_match('{^(dev-[^,\s@]+?|[^,\s@]+?\.x-dev)#.+$}i', $constraints, $match)) {
             $constraints = $match[1];
         }
 
@@ -259,20 +256,28 @@ class VersionParser
             return array();
         }
 
-        if (preg_match('{^~(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?$}', $constraint, $matches)) {
-            if (isset($matches[4])) {
+        if (preg_match('{^~(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?'.self::$modifierRegex.'?$}i', $constraint, $matches)) {
+            if (isset($matches[4]) && '' !== $matches[4]) {
                 $highVersion = $matches[1] . '.' . $matches[2] . '.' . ($matches[3] + 1) . '.0-dev';
                 $lowVersion = $matches[1] . '.' . $matches[2] . '.' . $matches[3]. '.' . $matches[4];
-            } elseif (isset($matches[3])) {
+            } elseif (isset($matches[3]) && '' !== $matches[3]) {
                 $highVersion = $matches[1] . '.' . ($matches[2] + 1) . '.0.0-dev';
                 $lowVersion = $matches[1] . '.' . $matches[2] . '.' . $matches[3]. '.0';
             } else {
                 $highVersion = ($matches[1] + 1) . '.0.0.0-dev';
-                if (isset($matches[2])) {
+                if (isset($matches[2]) && '' !== $matches[2]) {
                     $lowVersion = $matches[1] . '.' . $matches[2] . '.0.0';
                 } else {
                     $lowVersion = $matches[1] . '.0.0.0';
                 }
+            }
+
+            if (!empty($matches[5])) {
+                $lowVersion .= '-' . $this->expandStability($matches[5]) . (!empty($matches[6]) ? $matches[6] : '');
+            }
+
+            if (!empty($matches[7])) {
+                $lowVersion .= '-dev';
             }
 
             return array(
@@ -337,10 +342,29 @@ class VersionParser
         throw new \UnexpectedValueException($message);
     }
 
+    private function expandStability($stability)
+    {
+        $stability = strtolower($stability);
+
+        switch ($stability) {
+            case 'a':
+                return 'alpha';
+            case 'b':
+                return 'beta';
+            case 'p':
+            case 'pl':
+                return 'patch';
+            case 'rc':
+                return 'RC';
+            default:
+                return $stability;
+        }
+    }
+
     /**
      * Parses a name/version pairs and returns an array of pairs + the
      *
-     * @param array $pairs a set of package/version pairs separated by ":", "=" or " "
+     * @param  array   $pairs a set of package/version pairs separated by ":", "=" or " "
      * @return array[] array of arrays containing a name and (if provided) a version
      */
     public function parseNameVersionPairs(array $pairs)
@@ -348,7 +372,7 @@ class VersionParser
         $pairs = array_values($pairs);
         $result = array();
 
-        for ($i = 0; $i < count($pairs); $i++) {
+        for ($i = 0, $count = count($pairs); $i < $count; $i++) {
             $pair = preg_replace('{^([^=: ]+)[=: ](.*)$}', '$1 $2', trim($pairs[$i]));
             if (false === strpos($pair, ' ') && isset($pairs[$i+1]) && false === strpos($pairs[$i+1], '/')) {
                 $pair .= ' '.$pairs[$i+1];

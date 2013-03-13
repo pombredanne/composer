@@ -76,7 +76,7 @@ You can add a repository to the global config.json file by passing in the
 
 To edit the file in an external editor:
 
-    <comment>%command.full_name% --edit</comment>
+    <comment>%command.full_name% --editor</comment>
 
 To choose your editor you can set the "EDITOR" env variable.
 
@@ -87,7 +87,7 @@ To get a list of configuration values in the file:
 You can always pass more than one option. As an example, if you want to edit the
 global config.json file.
 
-    <comment>%command.full_name% --edit --global</comment>
+    <comment>%command.full_name% --editor --global</comment>
 EOT
             )
         ;
@@ -157,7 +157,7 @@ EOT
 
         // List the configuration of the file settings
         if ($input->getOption('list')) {
-            $this->listConfiguration($this->config->all(), $output);
+            $this->listConfiguration($this->config->all(), $this->config->raw(), $output);
 
             return 0;
         }
@@ -235,16 +235,57 @@ EOT
             ));
         }
 
+        // handle github-oauth
+        if (preg_match('/^github-oauth\.(.+)/', $settingKey, $matches)) {
+            if ($input->getOption('unset')) {
+                return $this->configSource->removeConfigSetting('github-oauth.'.$matches[1]);
+            }
+
+            if (1 !== count($values)) {
+                throw new \RuntimeException('Too many arguments, expected only one token');
+            }
+
+            return $this->configSource->addConfigSetting('github-oauth.'.$matches[1], $values[0]);
+        }
+
+        $booleanValidator = function ($val) { return in_array($val, array('true', 'false', '1', '0'), true); };
+        $booleanNormalizer = function ($val) { return $val !== 'false' && (bool) $val; };
+
         // handle config values
         $uniqueConfigValues = array(
             'process-timeout' => array('is_numeric', 'intval'),
-            'cache-ttl' => array('is_numeric', 'intval'),
-            'cache-files-ttl' => array('is_numeric', 'intval'),
+            'use-include-path' => array(
+                $booleanValidator,
+                $booleanNormalizer
+            ),
+            'preferred-install' => array(
+                function ($val) { return in_array($val, array('auto', 'source', 'dist'), true); },
+                function ($val) { return $val; }
+            ),
+            'notify-on-install' => array(
+                $booleanValidator,
+                $booleanNormalizer
+            ),
             'vendor-dir' => array('is_string', function ($val) { return $val; }),
             'bin-dir' => array('is_string', function ($val) { return $val; }),
-            'notify-on-install' => array(
-                function ($val) { return true; },
-                function ($val) { return $val !== 'false' && (bool) $val; }
+            'cache-dir' => array('is_string', function ($val) { return $val; }),
+            'cache-files-dir' => array('is_string', function ($val) { return $val; }),
+            'cache-repo-dir' => array('is_string', function ($val) { return $val; }),
+            'cache-vcs-dir' => array('is_string', function ($val) { return $val; }),
+            'cache-ttl' => array('is_numeric', 'intval'),
+            'cache-files-ttl' => array('is_numeric', 'intval'),
+            'cache-files-maxsize' => array(
+                function ($val) { return preg_match('/^\s*([0-9.]+)\s*(?:([kmg])(?:i?b)?)?\s*$/i', $val) > 0; },
+                function ($val) { return $val; }
+            ),
+            'discard-changes' => array(
+                function ($val) { return in_array($val, array('stash', 'true', 'false', '1', '0'), true); },
+                function ($val) {
+                    if ('stash' === $val) {
+                        return 'stash';
+                    }
+                    return $val !== 'false' && (bool) $val;
+                }
             ),
         );
         $multiConfigValues = array(
@@ -315,10 +356,11 @@ EOT
      * Display the contents of the file in a pretty formatted way
      *
      * @param array           $contents
+     * @param array           $rawContents
      * @param OutputInterface $output
      * @param string|null     $k
      */
-    protected function listConfiguration(array $contents, OutputInterface $output, $k = null)
+    protected function listConfiguration(array $contents, array $rawContents, OutputInterface $output, $k = null)
     {
         $origK = $k;
         foreach ($contents as $key => $value) {
@@ -326,9 +368,11 @@ EOT
                 continue;
             }
 
+            $rawVal = isset($rawContents[$key]) ? $rawContents[$key] : null;
+
             if (is_array($value) && (!is_numeric(key($value)) || ($key === 'repositories' && null === $k))) {
                 $k .= preg_replace('{^config\.}', '', $key . '.');
-                $this->listConfiguration($value, $output, $k);
+                $this->listConfiguration($value, $rawVal, $output, $k);
 
                 if (substr_count($k, '.') > 1) {
                     $k = str_split($k, strrpos($k, '.', -2));
@@ -352,7 +396,11 @@ EOT
                 $value = var_export($value, true);
             }
 
-            $output->writeln('[<comment>' . $k . $key . '</comment>] <info>' . $value . '</info>');
+            if (is_string($rawVal) && $rawVal != $value) {
+                $output->writeln('[<comment>' . $k . $key . '</comment>] <info>' . $rawVal . ' (' . $value . ')</info>');
+            } else {
+                $output->writeln('[<comment>' . $k . $key . '</comment>] <info>' . $value . '</info>');
+            }
         }
     }
 }

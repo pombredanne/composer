@@ -72,9 +72,10 @@ class ArrayLoader implements LoaderInterface
         }
 
         if (isset($config['source'])) {
-            if (!isset($config['source']['type']) || !isset($config['source']['url'])) {
+            if (!isset($config['source']['type']) || !isset($config['source']['url']) || !isset($config['source']['reference'])) {
                 throw new \UnexpectedValueException(sprintf(
-                    "package source should be specified as {\"type\": ..., \"url\": ...},\n%s given",
+                    "Package %s's source key should be specified as {\"type\": ..., \"url\": ..., \"reference\": ...},\n%s given.",
+                    $config['name'],
                     json_encode($config['source'])
                 ));
             }
@@ -87,8 +88,9 @@ class ArrayLoader implements LoaderInterface
             if (!isset($config['dist']['type'])
              || !isset($config['dist']['url'])) {
                 throw new \UnexpectedValueException(sprintf(
-                    "package dist should be specified as ".
-                    "{\"type\": ..., \"url\": ..., \"reference\": ..., \"shasum\": ...},\n%s given",
+                    "Package %s's dist key should be specified as ".
+                    "{\"type\": ..., \"url\": ..., \"reference\": ..., \"shasum\": ...},\n%s given.",
+                    $config['name'],
                     json_encode($config['dist'])
                 ));
             }
@@ -135,8 +137,10 @@ class ArrayLoader implements LoaderInterface
         }
 
         if (!empty($config['time'])) {
+            $time = ctype_digit($config['time']) ? '@'.$config['time'] : $config['time'];
+
             try {
-                $date = new \DateTime($config['time'], new \DateTimeZone('UTC'));
+                $date = new \DateTime($time, new \DateTimeZone('UTC'));
                 $package->setReleaseDate($date);
             } catch (\Exception $e) {
             }
@@ -149,7 +153,7 @@ class ArrayLoader implements LoaderInterface
         if ($package instanceof Package\CompletePackageInterface) {
             if (isset($config['scripts']) && is_array($config['scripts'])) {
                 foreach ($config['scripts'] as $event => $listeners) {
-                    $config['scripts'][$event]= (array) $listeners;
+                    $config['scripts'][$event] = (array) $listeners;
                 }
                 $package->setScripts($config['scripts']);
             }
