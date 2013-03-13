@@ -42,6 +42,18 @@ which describes the project's dependencies.
 We are simply stating that our project requires some `monolog/monolog` package,
 any version beginning with `1.2`.
 
+## System Requirements
+
+Composer requires PHP 5.3.2+ to run. A few sensitive php settings and compile
+flags are also required, but the installer will warn you about any
+incompatibilities.
+
+To install packages from sources instead of simple zip archives, you will need
+git, svn or hg depending on how the package is version-controlled.
+
+Composer is multi-platform and we strive to make it run equally well on Windows,
+Linux and OSX.
+
 ## Installation - *nix
 
 ### Downloading the Composer Executable
@@ -51,7 +63,7 @@ any version beginning with `1.2`.
 To actually get Composer, we need to do two things. The first one is installing
 Composer (again, this means downloading it into your project):
 
-    $ curl -s https://getcomposer.org/installer | php
+    $ curl -sS https://getcomposer.org/installer | php
 
 This will just check a few PHP settings and then download `composer.phar` to
 your working directory. This file is the Composer binary. It is a PHAR (PHP
@@ -61,7 +73,7 @@ line, amongst other things.
 You can install Composer to a specific directory by using the `--install-dir`
 option and providing a target directory (it can be an absolute or relative path):
 
-    $ curl -s https://getcomposer.org/installer | php -- --install-dir=bin
+    $ curl -sS https://getcomposer.org/installer | php -- --install-dir=bin
 
 #### Globally
 
@@ -71,7 +83,7 @@ executable and invoke it without `php`.
 
 You can run these commands to easily access `composer` from anywhere on your system:
 
-    $ curl -s https://getcomposer.org/installer | php
+    $ curl -sS https://getcomposer.org/installer | php
     $ sudo mv composer.phar /usr/local/bin/composer
 
 Then, just run `composer` in order to run Composer instead of `php composer.phar`.
@@ -96,15 +108,9 @@ composer.phar:
 
 Create a new `.bat` file alongside composer:
 
-    C:\bin>notepad composer.bat
+    C:\bin>echo @php "%~dp0composer.phar" %*>composer.bat
 
-Paste the following in, it simply proxies all arguments to composer:
-
-    @ECHO OFF
-    SET composerScript=composer.phar
-    php "%~dp0%composerScript%" %*
-
-Save the file. Close your current terminal. Test usage with a new terminal:
+Close your current terminal. Test usage with a new terminal:
 
     C:\Users\username>composer -V
     Composer version 27d8904
@@ -113,7 +119,11 @@ Save the file. Close your current terminal. Test usage with a new terminal:
 
 ## Using Composer
 
-Next, run the `install` command to resolve and download dependencies:
+We will now use Composer to install the dependencies of the project. If you
+don't have a `composer.json` file in the current directory please skip to the
+[Basic Usage](01-basic-usage.md) chapter.
+
+To resolve and download dependencies, run the `install` command:
 
     $ php composer.phar install
 
@@ -122,7 +132,8 @@ run this instead:
 
     $ composer install
 
-This will download monolog into the `vendor/monolog/monolog` directory.
+Following the [example above](#declaring-dependencies), this will download
+monolog into the `vendor/monolog/monolog` directory.
 
 ## Autoloading
 
@@ -133,7 +144,7 @@ process:
 
     require 'vendor/autoload.php';
 
-Woh! Now start using monolog! To keep learning more about Composer, keep
+Woah! Now start using monolog! To keep learning more about Composer, keep
 reading the "Basic Usage" chapter.
 
 [Basic Usage](01-basic-usage.md) &rarr;

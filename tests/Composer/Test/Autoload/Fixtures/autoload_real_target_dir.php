@@ -15,12 +15,12 @@ class ComposerAutoloaderInitTargetDir
 
     public static function getLoader()
     {
-        if (null !== static::$loader) {
-            return static::$loader;
+        if (null !== self::$loader) {
+            return self::$loader;
         }
 
         spl_autoload_register(array('ComposerAutoloaderInitTargetDir', 'loadClassLoader'));
-        static::$loader = $loader = new \Composer\Autoload\ClassLoader();
+        self::$loader = $loader = new \Composer\Autoload\ClassLoader();
         spl_autoload_unregister(array('ComposerAutoloaderInitTargetDir', 'loadClassLoader'));
 
         $vendorDir = dirname(__DIR__);
@@ -36,9 +36,12 @@ class ComposerAutoloaderInitTargetDir
             $loader->addClassMap($classMap);
         }
 
-        spl_autoload_register(array('ComposerAutoloaderInitTargetDir', 'autoload'));
+        spl_autoload_register(array('ComposerAutoloaderInitTargetDir', 'autoload'), true, true);
 
-        $loader->register();
+        $loader->register(true);
+
+        require $baseDir . '/foo.php';
+        require $baseDir . '/bar.php';
 
         return $loader;
     }

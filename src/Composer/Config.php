@@ -21,21 +21,27 @@ class Config
 {
     public static $defaultConfig = array(
         'process-timeout' => 300,
-        'cache-ttl' => 15552000, // 6 months
-        'vendor-dir' => 'vendor',
-        'bin-dir' => '{$vendor-dir}/bin',
+        'use-include-path' => false,
+        'preferred-install' => 'auto',
         'notify-on-install' => true,
         'github-protocols' => array('git', 'https', 'http'),
+        'vendor-dir' => 'vendor',
+        'bin-dir' => '{$vendor-dir}/bin',
         'cache-dir' => '{$home}/cache',
         'cache-files-dir' => '{$cache-dir}/files',
         'cache-repo-dir' => '{$cache-dir}/repo',
         'cache-vcs-dir' => '{$cache-dir}/vcs',
+        'cache-ttl' => 15552000, // 6 months
+        'cache-files-ttl' => null, // fallback to cache-ttl
+        'cache-files-maxsize' => '300MiB',
+        'discard-changes' => false,
     );
 
     public static $defaultRepositories = array(
         'packagist' => array(
             'type' => 'composer',
             'url' => 'https?://packagist.org',
+            'allow_ssl_downgrade' => true,
         )
     );
 
@@ -137,6 +143,29 @@ class Config
             case 'cache-ttl':
                 return (int) $this->config[$key];
 
+            case 'cache-files-maxsize':
+                if (!preg_match('/^\s*([0-9.]+)\s*(?:([kmg])(?:i?b)?)?\s*$/i', $this->config[$key], $matches)) {
+                    throw new \RuntimeException(
+                        "Could not parse the value of 'cache-files-maxsize': {$this->config[$key]}"
+                    );
+                }
+                $size = $matches[1];
+                if (isset($matches[2])) {
+                    switch (strtolower($matches[2])) {
+                        case 'g':
+                            $size *= 1024;
+                            // intentional fallthrough
+                        case 'm':
+                            $size *= 1024;
+                            // intentional fallthrough
+                        case 'k':
+                            $size *= 1024;
+                            break;
+                    }
+                }
+
+                return $size;
+
             case 'cache-files-ttl':
                 if (isset($this->config[$key])) {
                     return (int) $this->config[$key];
@@ -146,6 +175,15 @@ class Config
 
             case 'home':
                 return rtrim($this->process($this->config[$key]), '/\\');
+
+            case 'discard-changes':
+                if (!in_array($this->config[$key], array(true, false, 'stash'), true)) {
+                    throw new \RuntimeException(
+                        "Invalid value for 'discard-changes': {$this->config[$key]}"
+                    );
+                }
+
+                return $this->config[$key];
 
             default:
                 if (!isset($this->config[$key])) {
@@ -166,6 +204,14 @@ class Config
         }
 
         return $all;
+    }
+
+    public function raw()
+    {
+        return array(
+            'repositories' => $this->getRepositories(),
+            'config' => $this->config,
+        );
     }
 
     /**

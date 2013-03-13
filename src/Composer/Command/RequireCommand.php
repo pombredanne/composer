@@ -54,8 +54,8 @@ EOT
     {
         $file = Factory::getComposerFile();
 
-        if (!file_exists($file)) {
-            $output->writeln('<error>'.$file.' not found.</error>');
+        if (!file_exists($file) && !file_put_contents($file, "{\n}\n")) {
+            $output->writeln('<error>'.$file.' could not be created.</error>');
 
             return 1;
         }
@@ -64,11 +64,17 @@ EOT
 
             return 1;
         }
+        if (!is_writable($file)) {
+            $output->writeln('<error>'.$file.' is not writable.</error>');
+
+            return 1;
+        }
 
         $dialog = $this->getHelperSet()->get('dialog');
 
         $json = new JsonFile($file);
         $composer = $json->read();
+        $composerBackup = file_get_contents($json->getPath());
 
         $requirements = $this->determineRequirements($input, $output, $input->getArgument('packages'));
 
@@ -101,12 +107,19 @@ EOT
             ->setVerbose($input->getOption('verbose'))
             ->setPreferSource($input->getOption('prefer-source'))
             ->setPreferDist($input->getOption('prefer-dist'))
-            ->setDevMode($input->getOption('dev'))
+            ->setDevMode(true)
             ->setUpdate(true)
-            ->setUpdateWhitelist($requirements);
+            ->setUpdateWhitelist(array_keys($requirements));
         ;
 
-        return $install->run() ? 0 : 1;
+        if (!$install->run()) {
+            $output->writeln("\n".'<error>Installation failed, reverting '.$file.' to its original content.</error>');
+            file_put_contents($json->getPath(), $composerBackup);
+
+            return 1;
+        }
+
+        return 0;
     }
 
     private function updateFileCleanly($json, array $base, array $new, $requireKey)

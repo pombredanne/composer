@@ -47,7 +47,7 @@ class Filesystem
      * Uses the process component if proc_open is enabled on the PHP
      * installation.
      *
-     * @param string $directory
+     * @param  string $directory
      * @return bool
      */
     public function removeDirectory($directory)
@@ -66,7 +66,7 @@ class Filesystem
             $cmd = sprintf('rm -rf %s', escapeshellarg($directory));
         }
 
-        $result = $this->getProcess()->execute($cmd) === 0;
+        $result = $this->getProcess()->execute($cmd, $output) === 0;
 
         // clear stat cache because external processes aren't tracked by the php stat cache
         clearstatcache();
@@ -81,7 +81,7 @@ class Filesystem
      * before directories, creating a single non-recursive loop
      * to delete files/directories in the correct order.
      *
-     * @param string $directory
+     * @param  string $directory
      * @return bool
      */
     public function removeDirectoryPhp($directory)
@@ -108,7 +108,7 @@ class Filesystem
                     $directory.' exists and is not a directory.'
                 );
             }
-            if (!mkdir($directory, 0777, true)) {
+            if (!@mkdir($directory, 0777, true)) {
                 throw new \RuntimeException(
                     $directory.' does not exist and could not be created.'
                 );
@@ -119,7 +119,7 @@ class Filesystem
     /**
      * Copy then delete is a non-atomic version of {@link rename}.
      *
-     * Some systems can't rename and also dont have proc_open,
+     * Some systems can't rename and also don't have proc_open,
      * which requires this solution.
      *
      * @param string $source
@@ -159,11 +159,13 @@ class Filesystem
         if (defined('PHP_WINDOWS_VERSION_BUILD')) {
             // Try to copy & delete - this is a workaround for random "Access denied" errors.
             $command = sprintf('xcopy %s %s /E /I /Q', escapeshellarg($source), escapeshellarg($target));
-            if (0 === $this->processExecutor->execute($command)) {
+            if (0 === $this->processExecutor->execute($command, $output)) {
                 $this->remove($source);
 
                 return;
             }
+
+            return $this->copyThenRemove($source, $target);
         } else {
             // We do not use PHP's "rename" function here since it does not support
             // the case where $source, and $target are located on different partitions.
@@ -267,6 +269,40 @@ class Filesystem
     public function isAbsolutePath($path)
     {
         return substr($path, 0, 1) === '/' || substr($path, 1, 1) === ':';
+    }
+
+    /**
+     * Returns size of a file or directory specified by path. If a directory is
+     * given, it's size will be computed recursively.
+     *
+     * @param  string $path Path to the file or directory
+     * @return int
+     */
+    public function size($path)
+    {
+        if (!file_exists($path)) {
+            throw new \RuntimeException("$path does not exist.");
+        }
+        if (is_dir($path)) {
+            return $this->directorySize($path);
+        }
+
+        return filesize($path);
+    }
+
+    protected function directorySize($directory)
+    {
+        $it = new RecursiveDirectoryIterator($directory, RecursiveDirectoryIterator::SKIP_DOTS);
+        $ri = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
+
+        $size = 0;
+        foreach ($ri as $file) {
+            if ($file->isFile()) {
+                $size += $file->getSize();
+            }
+        }
+
+        return $size;
     }
 
     protected function getProcess()

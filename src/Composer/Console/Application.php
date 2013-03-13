@@ -24,6 +24,7 @@ use Composer\Composer;
 use Composer\Factory;
 use Composer\IO\IOInterface;
 use Composer\IO\ConsoleIO;
+use Composer\Json\JsonValidationException;
 use Composer\Util\ErrorHandler;
 
 /**
@@ -44,6 +45,14 @@ class Application extends BaseApplication
      * @var IOInterface
      */
     protected $io;
+
+    private static $logo = '   ______
+  / ____/___  ____ ___  ____  ____  ________  _____
+ / /   / __ \/ __ `__ \/ __ \/ __ \/ ___/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ (__  )  __/ /
+\____/\____/_/ /_/ /_/ .___/\____/____/\___/_/
+                    /_/
+';
 
     public function __construct()
     {
@@ -93,6 +102,7 @@ class Application extends BaseApplication
 
         if ($input->hasParameterOption('--profile')) {
             $startTime = microtime(true);
+            $this->io->enableDebugging($startTime);
         }
 
         $oldWorkingDir = getcwd();
@@ -136,7 +146,12 @@ class Application extends BaseApplication
                     $this->io->write($e->getMessage());
                     exit(1);
                 }
+            } catch (JsonValidationException $e) {
+                $errors = ' - ' . implode(PHP_EOL . ' - ', $e->getErrors());
+                $message = $e->getMessage() . ':' . PHP_EOL . $errors;
+                throw new JsonValidationException($message);
             }
+
         }
 
         return $this->composer;
@@ -148,6 +163,11 @@ class Application extends BaseApplication
     public function getIO()
     {
         return $this->io;
+    }
+
+    public function getHelp()
+    {
+        return self::$logo . parent::getHelp();
     }
 
     /**
