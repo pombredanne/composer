@@ -7,13 +7,16 @@ This is a list of common pitfalls on using Composer, and how to avoid them.
 
 ## General
 
-1. When facing any kind of problems using Composer, be sure to **work with the
+1. Before asking anyone, run [`composer diagnose`](../03-cli.md#diagnose) to check
+   for common problems. If it all checks out, proceed to the next steps.
+
+2. When facing any kind of problems using Composer, be sure to **work with the
    latest version**. See [self-update](../03-cli.md#self-update) for details.
 
-2. Make sure you have no problems with your setup by running the installer's
+3. Make sure you have no problems with your setup by running the installer's
    checks via `curl -sS https://getcomposer.org/installer | php -- --check`.
 
-3. Ensure you're **installing vendors straight from your `composer.json`** via
+4. Ensure you're **installing vendors straight from your `composer.json`** via
    `rm -rf vendor && composer update -v` when troubleshooting, excluding any
    possible interferences with existing vendor installations or `composer.lock`
    entries.
@@ -49,6 +52,25 @@ This is a list of common pitfalls on using Composer, and how to avoid them.
    the root package's version as `dev-master`.
    Use: `before_script: COMPOSER_ROOT_VERSION=dev-master composer install` to export
    the variable for the call to composer.
+
+## Need to override a package version
+
+Let say your project depends on package A which in turn depends on a specific
+version of package B (say 0.1) and you need a different version of that
+package - version 0.11.
+
+You can fix this by aliasing version 0.11 to 0.1:
+
+composer.json:
+
+    {
+        "require": {
+            "A": "0.2",
+            "B": "0.11 as 0.1"
+        }
+    }
+
+See [aliases](aliases.md) for more information.
 
 ## Memory limit errors
 

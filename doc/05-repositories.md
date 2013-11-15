@@ -240,9 +240,16 @@ Example assuming you patched monolog to fix a bug in the `bugfix` branch:
 When you run `php composer.phar update`, you should get your modified version
 of `monolog/monolog` instead of the one from packagist.
 
-It is possible to inline-alias a package constraint so that it matches a
-constraint that it otherwise would not. For more information [see the
-aliases article](articles/aliases.md).
+Note that you should not rename the package unless you really intend to fork
+it in the long term, and completely move away from the original package.
+Composer will correctly pick your package over the original one since the
+custom repository has priority over packagist. If you want to rename the
+package, you should do so in the default (often master) branch and not in a
+feature branch, since the package name is taken from the default branch.
+
+If other dependencies rely on the package you forked, it is possible to
+inline-alias it so that it matches a constraint that it otherwise would not.
+For more information [see the aliases article](articles/aliases.md).
 
 #### Using private repositories
 
@@ -307,6 +314,11 @@ repository like this:
 
 If you have no branches or tags directory you can disable them entirely by
 setting the `branches-path` or `tags-path` to `false`.
+
+If the package is in a sub-directory, e.g. `/trunk/foo/bar/composer.json` and
+`/tags/1.0/foo/bar/composer.json`, then you can make composer access it by
+setting the `"package-path"` option to the sub-directory, in this example it
+would be `"package-path": "foo/bar/"`.
 
 ### PEAR
 
@@ -430,6 +442,14 @@ Here is an example for the smarty template engine:
 
 Typically you would leave the source part off, as you don't really need it.
 
+> **Note**: This repository type has a few limitations and should be avoided
+> whenever possible:
+>
+> - Composer will not update the package unless you change the `version` field.
+> - Composer will not update the commit references, so if you use `master` as
+>   reference you will have to delete the package to force an update, and will
+>   have to deal with an unstable lock file.
+
 ## Hosting your own
 
 While you will probably want to put your packages on packagist most of the time,
@@ -443,8 +463,8 @@ there are some use cases for hosting your own repository.
   might want to keep them separate to packagist. An example of this would be
   wordpress plugins.
 
-When hosting your own package repository it is recommended to use a `composer`
-one. This is type that is native to composer and yields the best performance.
+For hosting your own packages, a native `composer` type of repository is 
+recommended, which provides the best performance.
 
 There are a few tools that can help you create a `composer` repository.
 
@@ -477,6 +497,40 @@ package repository definitions. It will fetch all the packages that are
 Check [the satis GitHub repository](https://github.com/composer/satis) and
 the [Satis article](articles/handling-private-packages-with-satis.md) for more
 information.
+
+### Artifact
+
+There are some cases, when there is no ability to have one of the previously
+mentioned repository types online, even the VCS one. Typical example could be
+cross-organisation library exchange through built artifacts. Of course, most
+of the times they are private. To simplify maintenance, one can simply use a
+repository of type `artifact` with a folder containing ZIP archives of those
+private packages:
+
+    {
+        "repositories": [
+            {
+                "type": "artifact",
+                "url": "path/to/directory/with/zips/"
+            }
+        ],
+        "require": {
+            "private-vendor-one/core": "15.6.2",
+            "private-vendor-two/connectivity": "*",
+            "acme-corp/parser": "10.3.5"
+        }
+    }
+
+Each zip artifact is just a ZIP archive with `composer.json` in root folder:
+
+    $ unzip -l acme-corp-parser-10.3.5.zip
+    composer.json
+    ...
+
+If there are two archives with different versions of a package, they are both
+imported. When an archive with a newer version is added in the artifact folder
+and you run `update`, that version will be imported as well and Composer will
+update to the latest version.
 
 ## Disabling Packagist
 

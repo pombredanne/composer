@@ -24,15 +24,29 @@ Composer fires the following named events during its execution process:
 - **post-install-cmd**: occurs after the `install` command is executed.
 - **pre-update-cmd**: occurs before the `update` command is executed.
 - **post-update-cmd**: occurs after the `update` command is executed.
+- **pre-status-cmd**: occurs before the `status` command is executed.
+- **post-status-cmd**: occurs after the `status` command is executed.
 - **pre-package-install**: occurs before a package is installed.
 - **post-package-install**: occurs after a package is installed.
 - **pre-package-update**: occurs before a package is updated.
 - **post-package-update**: occurs after a package is updated.
 - **pre-package-uninstall**: occurs before a package has been uninstalled.
 - **post-package-uninstall**: occurs after a package has been uninstalled.
+- **pre-autoload-dump**: occurs before the autoloader is dumped, either
+  during `install`/`update`, or via the `dump-autoload` command.
 - **post-autoload-dump**: occurs after the autoloader is dumped, either
   during `install`/`update`, or via the `dump-autoload` command.
+- **post-root-package-install**: occurs after the root package has been
+  installed, during the `create-project` command.
+- **post-create-project-cmd**: occurs after the `create-project` command is
+  executed.
 
+**NOTE: Composer makes no assumptions about the state of your dependencies 
+prior to `install` or `update`. Therefore, you should not specify scripts that 
+require Composer-managed dependencies in the `pre-update-cmd` or 
+`pre-install-cmd` event hooks. If you need to execute scripts prior to 
+`install` or `update` please make sure they are self-contained within your 
+root package.**
 
 ## Defining scripts
 

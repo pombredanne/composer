@@ -94,10 +94,14 @@ class Application extends BaseApplication
             $output->writeln('<warning>Composer only officially supports PHP 5.3.2 and above, you will most likely encounter problems with your PHP '.PHP_VERSION.', upgrading is strongly recommended.</warning>');
         }
 
-        if (defined('COMPOSER_DEV_WARNING_TIME') && $this->getCommandName($input) !== 'self-update') {
+        if (defined('COMPOSER_DEV_WARNING_TIME') && $this->getCommandName($input) !== 'self-update' && $this->getCommandName($input) !== 'selfupdate') {
             if (time() > COMPOSER_DEV_WARNING_TIME) {
                 $output->writeln(sprintf('<warning>Warning: This development build of composer is over 30 days old. It is recommended to update it by running "%s self-update" to get the latest version.</warning>', $_SERVER['PHP_SELF']));
             }
+        }
+
+        if (getenv('COMPOSER_NO_INTERACTION')) {
+            $input->setInteractive(false);
         }
 
         if ($input->hasParameterOption('--profile')) {
@@ -105,12 +109,16 @@ class Application extends BaseApplication
             $this->io->enableDebugging($startTime);
         }
 
-        $oldWorkingDir = getcwd();
-        $this->switchWorkingDir($input);
+        if ($newWorkDir = $this->getNewWorkingDir($input)) {
+            $oldWorkingDir = getcwd();
+            chdir($newWorkDir);
+        }
 
         $result = parent::doRun($input, $output);
 
-        chdir($oldWorkingDir);
+        if (isset($oldWorkingDir)) {
+            chdir($oldWorkingDir);
+        }
 
         if (isset($startTime)) {
             $output->writeln('<info>Memory usage: '.round(memory_get_usage() / 1024 / 1024, 2).'MB (peak: '.round(memory_get_peak_usage() / 1024 / 1024, 2).'MB), time: '.round(microtime(true) - $startTime, 2).'s');
@@ -123,24 +131,49 @@ class Application extends BaseApplication
      * @param  InputInterface    $input
      * @throws \RuntimeException
      */
-    private function switchWorkingDir(InputInterface $input)
+    private function getNewWorkingDir(InputInterface $input)
     {
-        $workingDir = $input->getParameterOption(array('--working-dir', '-d'), getcwd());
-        if (!is_dir($workingDir)) {
+        $workingDir = $input->getParameterOption(array('--working-dir', '-d'));
+        if (false !== $workingDir && !is_dir($workingDir)) {
             throw new \RuntimeException('Invalid working directory specified.');
         }
-        chdir($workingDir);
+
+        return $workingDir;
     }
 
     /**
-     * @param  bool               $required
+     * {@inheritDoc}
+     */
+    public function renderException($exception, $output)
+    {
+        try {
+            $composer = $this->getComposer(false);
+            if ($composer) {
+                $config = $composer->getConfig();
+
+                $minSpaceFree = 1024*1024;
+                if ((($df = @disk_free_space($dir = $config->get('home'))) !== false && $df < $minSpaceFree)
+                    || (($df = @disk_free_space($dir = $config->get('vendor-dir'))) !== false && $df < $minSpaceFree)
+                ) {
+                    $output->writeln('<error>The disk hosting '.$dir.' is full, this may be the cause of the following exception</error>');
+                }
+            }
+        } catch (\Exception $e) {}
+
+        return parent::renderException($exception, $output);
+    }
+
+    /**
+     * @param  bool                    $required
+     * @param  bool                    $disablePlugins
+     * @throws JsonValidationException
      * @return \Composer\Composer
      */
-    public function getComposer($required = true)
+    public function getComposer($required = true, $disablePlugins = false)
     {
         if (null === $this->composer) {
             try {
-                $this->composer = Factory::create($this->io);
+                $this->composer = Factory::create($this->io, null, $disablePlugins);
             } catch (\InvalidArgumentException $e) {
                 if ($required) {
                     $this->io->write($e->getMessage());
@@ -189,12 +222,25 @@ class Application extends BaseApplication
         $commands[] = new Command\RequireCommand();
         $commands[] = new Command\DumpAutoloadCommand();
         $commands[] = new Command\StatusCommand();
+        $commands[] = new Command\ArchiveCommand();
+        $commands[] = new Command\DiagnoseCommand();
+        $commands[] = new Command\RunScriptCommand();
+        $commands[] = new Command\LicensesCommand();
+        $commands[] = new Command\GlobalCommand();
 
         if ('phar:' === substr(__FILE__, 0, 5)) {
             $commands[] = new Command\SelfUpdateCommand();
         }
 
         return $commands;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getLongVersion()
+    {
+        return parent::getLongVersion() . ' ' . Composer::RELEASE_DATE;
     }
 
     /**

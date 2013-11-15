@@ -14,6 +14,7 @@ namespace Composer\Installer;
 
 use Composer\Package\PackageInterface;
 use Composer\Package\AliasPackage;
+use Composer\Plugin\PluginInstaller;
 use Composer\Repository\RepositoryInterface;
 use Composer\Repository\InstalledRepositoryInterface;
 use Composer\DependencyResolver\Operation\OperationInterface;
@@ -29,6 +30,7 @@ use Composer\Util\StreamContextFactory;
  *
  * @author Konstantin Kudryashov <ever.zet@gmail.com>
  * @author Jordi Boggiano <j.boggiano@seld.be>
+ * @author Nils Adermann <naderman@naderman.de>
  */
 class InstallationManager
 {
@@ -66,16 +68,16 @@ class InstallationManager
     }
 
     /**
-     * Disables custom installers.
+     * Disables plugins.
      *
-     * We prevent any custom installers from being instantiated by simply
+     * We prevent any plugins from being instantiated by simply
      * deactivating the installer for them. This ensure that no third-party
      * code is ever executed.
      */
-    public function disableCustomInstallers()
+    public function disablePlugins()
     {
         foreach ($this->installers as $i => $installer) {
-            if (!$installer instanceof InstallerInstaller) {
+            if (!$installer instanceof PluginInstaller) {
                 continue;
             }
 
@@ -90,7 +92,7 @@ class InstallationManager
      *
      * @return InstallerInterface
      *
-     * @throws InvalidArgumentException if installer for provided type is not registered
+     * @throws \InvalidArgumentException if installer for provided type is not registered
      */
     public function getInstaller($type)
     {
@@ -251,7 +253,7 @@ class InstallationManager
                         )
                     );
 
-                    $context = StreamContextFactory::getContext($opts);
+                    $context = StreamContextFactory::getContext($url, $opts);
                     @file_get_contents($url, false, $context);
                 }
 
@@ -275,7 +277,7 @@ class InstallationManager
                 )
             );
 
-            $context = StreamContextFactory::getContext($opts);
+            $context = StreamContextFactory::getContext($repoUrl, $opts);
             @file_get_contents($repoUrl, false, $context);
         }
 

@@ -18,6 +18,8 @@ use Composer\Downloader\TransportException;
 
 /**
  * @author François Pluchino <francois.pluchino@opendisplay.com>
+ * @author Jordi Boggiano <j.boggiano@seld.be>
+ * @author Nils Adermann <naderman@naderman.de>
  */
 class RemoteFilesystem
 {
@@ -27,7 +29,7 @@ class RemoteFilesystem
     private $originUrl;
     private $fileUrl;
     private $fileName;
-    private $result;
+    private $retry;
     private $progress;
     private $lastProgress;
     private $options;
@@ -57,9 +59,7 @@ class RemoteFilesystem
      */
     public function copy($originUrl, $fileUrl, $fileName, $progress = true, $options = array())
     {
-        $this->get($originUrl, $fileUrl, $options, $fileName, $progress);
-
-        return $this->result;
+        return $this->get($originUrl, $fileUrl, $options, $fileName, $progress);
     }
 
     /**
@@ -74,9 +74,17 @@ class RemoteFilesystem
      */
     public function getContents($originUrl, $fileUrl, $progress = true, $options = array())
     {
-        $this->get($originUrl, $fileUrl, $options, null, $progress);
+        return $this->get($originUrl, $fileUrl, $options, null, $progress);
+    }
 
-        return $this->result;
+    /**
+     * Retrieve the options set in the constructor
+     *
+     * @return array Options
+     */
+    public function getOptions()
+    {
+        return $this->options;
     }
 
     /**
@@ -88,24 +96,35 @@ class RemoteFilesystem
      * @param string  $fileName          the local filename
      * @param boolean $progress          Display the progression
      *
-     * @throws TransportException When the file could not be downloaded
+     * @throws TransportException|\Exception
+     * @throws TransportException            When the file could not be downloaded
+     *
+     * @return bool|string
      */
     protected function get($originUrl, $fileUrl, $additionalOptions = array(), $fileName = null, $progress = true)
     {
         $this->bytesMax = 0;
-        $this->result = null;
         $this->originUrl = $originUrl;
         $this->fileUrl = $fileUrl;
         $this->fileName = $fileName;
         $this->progress = $progress;
         $this->lastProgress = null;
 
+        // capture username/password from URL if there is one
+        if (preg_match('{^https?://(.+):(.+)@([^/]+)}i', $fileUrl, $match)) {
+            $this->io->setAuthentication($originUrl, urldecode($match[1]), urldecode($match[2]));
+        }
+
         $options = $this->getOptionsForUrl($originUrl, $additionalOptions);
+
+        if ($this->io->isDebug()) {
+            $this->io->write((substr($fileUrl, 0, 4) === 'http' ? 'Downloading ' : 'Reading ') . $fileUrl);
+        }
         if (isset($options['github-token'])) {
             $fileUrl .= (false === strpos($fileUrl, '?') ? '?' : '&') . 'access_token='.$options['github-token'];
             unset($options['github-token']);
         }
-        $ctx = StreamContextFactory::getContext($options, array('notification' => array($this, 'callbackGet')));
+        $ctx = StreamContextFactory::getContext($fileUrl, $options, array('notification' => array($this, 'callbackGet')));
 
         if ($this->progress) {
             $this->io->write("    Downloading: <comment>connection...</comment>", false);
@@ -113,6 +132,7 @@ class RemoteFilesystem
 
         $errorMessage = '';
         $errorCode = 0;
+        $result = false;
         set_error_handler(function ($code, $msg) use (&$errorMessage) {
             if ($errorMessage) {
                 $errorMessage .= "\n";
@@ -130,7 +150,7 @@ class RemoteFilesystem
             $errorMessage = 'allow_url_fopen must be enabled in php.ini ('.$errorMessage.')';
         }
         restore_error_handler();
-        if (isset($e)) {
+        if (isset($e) && !$this->retry) {
             throw $e;
         }
 
@@ -141,7 +161,7 @@ class RemoteFilesystem
         }
 
         // decode gzip
-        if (false !== $result && extension_loaded('zlib') && substr($fileUrl, 0, 4) === 'http') {
+        if ($result && extension_loaded('zlib') && substr($fileUrl, 0, 4) === 'http') {
             $decode = false;
             foreach ($http_response_header as $header) {
                 if (preg_match('{^content-encoding: *gzip *$}i', $header)) {
@@ -168,6 +188,10 @@ class RemoteFilesystem
 
         // handle copy command if download was successful
         if (false !== $result && null !== $fileName) {
+            if ('' === $result) {
+                throw new TransportException('"'.$this->fileUrl.'" appears broken, and returned an empty 200 response');
+            }
+
             $errorMessage = '';
             set_error_handler(function ($code, $msg) use (&$errorMessage) {
                 if ($errorMessage) {
@@ -178,42 +202,43 @@ class RemoteFilesystem
             $result = (bool) file_put_contents($fileName, $result);
             restore_error_handler();
             if (false === $result) {
-                throw new TransportException('The "'.$fileUrl.'" file could not be written to '.$fileName.': '.$errorMessage);
+                throw new TransportException('The "'.$this->fileUrl.'" file could not be written to '.$fileName.': '.$errorMessage);
             }
         }
 
-        // avoid overriding if content was loaded by a sub-call to get()
-        if (null === $this->result) {
-            $this->result = $result;
+        if ($this->retry) {
+            $this->retry = false;
+
+            return $this->get($this->originUrl, $this->fileUrl, $additionalOptions, $this->fileName, $this->progress);
         }
 
-        if (false === $this->result) {
-            $e = new TransportException('The "'.$fileUrl.'" file could not be downloaded: '.$errorMessage, $errorCode);
+        if (false === $result) {
+            $e = new TransportException('The "'.$this->fileUrl.'" file could not be downloaded: '.$errorMessage, $errorCode);
             if (!empty($http_response_header[0])) {
                 $e->setHeaders($http_response_header);
             }
 
             throw $e;
         }
+
+        return $result;
     }
 
     /**
      * Get notification action.
      *
-     * @param integer $notificationCode The notification code
-     * @param integer $severity         The severity level
-     * @param string  $message          The message
-     * @param integer $messageCode      The message code
-     * @param integer $bytesTransferred The loaded size
-     * @param integer $bytesMax         The total size
+     * @param  integer            $notificationCode The notification code
+     * @param  integer            $severity         The severity level
+     * @param  string             $message          The message
+     * @param  integer            $messageCode      The message code
+     * @param  integer            $bytesTransferred The loaded size
+     * @param  integer            $bytesMax         The total size
+     * @throws TransportException
      */
     protected function callbackGet($notificationCode, $severity, $message, $messageCode, $bytesTransferred, $bytesMax)
     {
         switch ($notificationCode) {
             case STREAM_NOTIFY_FAILURE:
-                throw new TransportException('The "'.$this->fileUrl.'" file could not be downloaded ('.trim($message).')', $messageCode);
-                break;
-
             case STREAM_NOTIFY_AUTH_REQUIRED:
                 if (401 === $messageCode) {
                     if (!$this->io->isInteractive()) {
@@ -227,9 +252,16 @@ class RemoteFilesystem
                     $password = $this->io->askAndHideAnswer('      Password: ');
                     $this->io->setAuthentication($this->originUrl, $username, $password);
 
-                    $this->get($this->originUrl, $this->fileUrl, $this->fileName, $this->progress);
+                    $this->retry = true;
+                    throw new TransportException('RETRY');
+                    break;
                 }
-                break;
+
+                if ($notificationCode === STREAM_NOTIFY_AUTH_REQUIRED) {
+                    break;
+                }
+
+                throw new TransportException('The "'.$this->fileUrl.'" file could not be downloaded ('.trim($message).')', $messageCode);
 
             case STREAM_NOTIFY_AUTH_RESULT:
                 if (403 === $messageCode) {

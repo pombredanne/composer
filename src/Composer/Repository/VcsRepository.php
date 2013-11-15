@@ -44,9 +44,11 @@ class VcsRepository extends ArrayRepository
             'github'        => 'Composer\Repository\Vcs\GitHubDriver',
             'git-bitbucket' => 'Composer\Repository\Vcs\GitBitbucketDriver',
             'git'           => 'Composer\Repository\Vcs\GitDriver',
-            'svn'           => 'Composer\Repository\Vcs\SvnDriver',
             'hg-bitbucket'  => 'Composer\Repository\Vcs\HgBitbucketDriver',
             'hg'            => 'Composer\Repository\Vcs\HgDriver',
+            'perforce'      => 'Composer\Repository\Vcs\PerforceDriver',
+            // svn must be last because identifying a subversion server for sure is practically impossible
+            'svn'           => 'Composer\Repository\Vcs\SvnDriver',
         );
 
         $this->url = $repoConfig['url'];
@@ -55,6 +57,11 @@ class VcsRepository extends ArrayRepository
         $this->verbose = $io->isVerbose();
         $this->config = $config;
         $this->repoConfig = $repoConfig;
+    }
+
+    public function getRepoConfig()
+    {
+        return $this->repoConfig;
     }
 
     public function setLoader(LoaderInterface $loader)
@@ -73,7 +80,7 @@ class VcsRepository extends ArrayRepository
         }
 
         foreach ($this->drivers as $driver) {
-            if ($driver::supports($this->io, $this->url)) {
+            if ($driver::supports($this->io, $this->config, $this->url)) {
                 $driver = new $driver($this->repoConfig, $this->io, $this->config);
                 $driver->initialize();
 
@@ -82,7 +89,7 @@ class VcsRepository extends ArrayRepository
         }
 
         foreach ($this->drivers as $driver) {
-            if ($driver::supports($this->io, $this->url, true)) {
+            if ($driver::supports($this->io, $this->config, $this->url, true)) {
                 $driver = new $driver($this->repoConfig, $this->io, $this->config);
                 $driver->initialize();
 
@@ -246,6 +253,7 @@ class VcsRepository extends ArrayRepository
                 continue;
             }
         }
+        $driver->cleanup();
 
         if (!$verbose) {
             $this->io->overwrite('', false);

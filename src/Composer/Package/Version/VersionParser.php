@@ -15,6 +15,7 @@ namespace Composer\Package\Version;
 use Composer\Package\BasePackage;
 use Composer\Package\PackageInterface;
 use Composer\Package\Link;
+use Composer\Package\LinkConstraint\EmptyConstraint;
 use Composer\Package\LinkConstraint\MultiConstraint;
 use Composer\Package\LinkConstraint\VersionConstraint;
 
@@ -85,8 +86,9 @@ class VersionParser
     /**
      * Normalizes a version string to be able to perform comparisons on it
      *
-     * @param  string $version
-     * @param  string $fullVersion optional complete version string to give more context
+     * @param  string                    $version
+     * @param  string                    $fullVersion optional complete version string to give more context
+     * @throws \UnexpectedValueException
      * @return array
      */
     public function normalize($version, $fullVersion = null)
@@ -221,21 +223,33 @@ class VersionParser
             $constraints = $match[1];
         }
 
-        $constraints = preg_split('{\s*,\s*}', trim($constraints));
+        $orConstraints = preg_split('{\s*\|\s*}', trim($constraints));
+        $orGroups = array();
+        foreach ($orConstraints as $constraints) {
+            $andConstraints = preg_split('{\s*,\s*}', $constraints);
 
-        if (count($constraints) > 1) {
-            $constraintObjects = array();
-            foreach ($constraints as $constraint) {
-                $constraintObjects = array_merge($constraintObjects, $this->parseConstraint($constraint));
+            if (count($andConstraints) > 1) {
+                $constraintObjects = array();
+                foreach ($andConstraints as $constraint) {
+                    $constraintObjects = array_merge($constraintObjects, $this->parseConstraint($constraint));
+                }
+            } else {
+                $constraintObjects = $this->parseConstraint($andConstraints[0]);
             }
-        } else {
-            $constraintObjects = $this->parseConstraint($constraints[0]);
+
+            if (1 === count($constraintObjects)) {
+                $constraint = $constraintObjects[0];
+            } else {
+                $constraint = new MultiConstraint($constraintObjects);
+            }
+
+            $orGroups[] = $constraint;
         }
 
-        if (1 === count($constraintObjects)) {
-            $constraint = $constraintObjects[0];
+        if (1 === count($orGroups)) {
+            $constraint = $orGroups[0];
         } else {
-            $constraint = new MultiConstraint($constraintObjects);
+            $constraint = new MultiConstraint($orGroups, false);
         }
 
         $constraint->setPrettyString($prettyConstraint);
@@ -253,66 +267,73 @@ class VersionParser
         }
 
         if (preg_match('{^[x*](\.[x*])*$}i', $constraint)) {
-            return array();
+            return array(new EmptyConstraint);
         }
 
+        // match tilde constraints
+        // like wildcard constraints, unsuffixed tilde constraints say that they must be greater than the previous
+        // version, to ensure that unstable instances of the current version are allowed.
+        // however, if a stability suffix is added to the constraint, then a >= match on the current version is
+        // used instead
         if (preg_match('{^~(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?'.self::$modifierRegex.'?$}i', $constraint, $matches)) {
+            // Work out which position in the version we are operating at
             if (isset($matches[4]) && '' !== $matches[4]) {
-                $highVersion = $matches[1] . '.' . $matches[2] . '.' . ($matches[3] + 1) . '.0-dev';
-                $lowVersion = $matches[1] . '.' . $matches[2] . '.' . $matches[3]. '.' . $matches[4];
+                $position = 4;
             } elseif (isset($matches[3]) && '' !== $matches[3]) {
-                $highVersion = $matches[1] . '.' . ($matches[2] + 1) . '.0.0-dev';
-                $lowVersion = $matches[1] . '.' . $matches[2] . '.' . $matches[3]. '.0';
+                $position = 3;
+            } elseif (isset($matches[2]) && '' !== $matches[2]) {
+                $position = 2;
             } else {
-                $highVersion = ($matches[1] + 1) . '.0.0.0-dev';
-                if (isset($matches[2]) && '' !== $matches[2]) {
-                    $lowVersion = $matches[1] . '.' . $matches[2] . '.0.0';
-                } else {
-                    $lowVersion = $matches[1] . '.0.0.0';
-                }
+                $position = 1;
             }
 
+            // Calculate the stability suffix
+            $stabilitySuffix = '';
             if (!empty($matches[5])) {
-                $lowVersion .= '-' . $this->expandStability($matches[5]) . (!empty($matches[6]) ? $matches[6] : '');
+                $stabilitySuffix .= '-' . $this->expandStability($matches[5]) . (!empty($matches[6]) ? $matches[6] : '');
             }
 
             if (!empty($matches[7])) {
-                $lowVersion .= '-dev';
+                $stabilitySuffix .= '-dev';
             }
 
+            if (!$stabilitySuffix) {
+                $stabilitySuffix = "-dev";
+            }
+            $lowVersion = $this->manipulateVersionString($matches, $position, 0) . $stabilitySuffix;
+            $lowerBound = new VersionConstraint('>=', $lowVersion);
+
+            // For upper bound, we increment the position of one more significance,
+            // but highPosition = 0 would be illegal
+            $highPosition = max(1, $position - 1);
+            $highVersion = $this->manipulateVersionString($matches, $highPosition, 1) . '-dev';
+            $upperBound = new VersionConstraint('<', $highVersion);
+
             return array(
-                new VersionConstraint('>=', $lowVersion),
-                new VersionConstraint('<', $highVersion),
+                $lowerBound,
+                $upperBound
             );
         }
 
         // match wildcard constraints
         if (preg_match('{^(\d+)(?:\.(\d+))?(?:\.(\d+))?\.[x*]$}', $constraint, $matches)) {
-            if (isset($matches[3])) {
-                $highVersion = $matches[1] . '.' . $matches[2] . '.' . $matches[3] . '.9999999';
-                if ($matches[3] === '0') {
-                    $lowVersion = $matches[1] . '.' . ($matches[2] - 1) . '.9999999.9999999';
-                } else {
-                    $lowVersion = $matches[1] . '.' . $matches[2] . '.' . ($matches[3] - 1). '.9999999';
-                }
-            } elseif (isset($matches[2])) {
-                $highVersion = $matches[1] . '.' . $matches[2] . '.9999999.9999999';
-                if ($matches[2] === '0') {
-                    $lowVersion = ($matches[1] - 1) . '.9999999.9999999.9999999';
-                } else {
-                    $lowVersion = $matches[1] . '.' . ($matches[2] - 1) . '.9999999.9999999';
-                }
+            if (isset($matches[3]) && '' !== $matches[3]) {
+                $position = 3;
+            } elseif (isset($matches[2]) && '' !== $matches[2]) {
+                $position = 2;
             } else {
-                $highVersion = $matches[1] . '.9999999.9999999.9999999';
-                if ($matches[1] === '0') {
-                    return array(new VersionConstraint('<', $highVersion));
-                } else {
-                    $lowVersion = ($matches[1] - 1) . '.9999999.9999999.9999999';
-                }
+                $position = 1;
+            }
+
+            $lowVersion = $this->manipulateVersionString($matches, $position) . "-dev";
+            $highVersion = $this->manipulateVersionString($matches, $position, 1) . "-dev";
+
+            if ($lowVersion === "0.0.0.0-dev") {
+                return array(new VersionConstraint('<', $highVersion));
             }
 
             return array(
-                new VersionConstraint('>', $lowVersion),
+                new VersionConstraint('>=', $lowVersion),
                 new VersionConstraint('<', $highVersion),
             );
         }
@@ -336,10 +357,43 @@ class VersionParser
 
         $message = 'Could not parse version constraint '.$constraint;
         if (isset($e)) {
-            $message .= ': '.$e->getMessage();
+            $message .= ': '. $e->getMessage();
         }
 
         throw new \UnexpectedValueException($message);
+    }
+
+    /**
+     * Increment, decrement, or simply pad a version number.
+     *
+     * Support function for {@link parseConstraint()}
+     *
+     * @param  array  $matches  Array with version parts in array indexes 1,2,3,4
+     * @param  int    $position 1,2,3,4 - which segment of the version to decrement
+     * @param  string $pad      The string to pad version parts after $position
+     * @return string The new version
+     */
+    private function manipulateVersionString($matches, $position, $increment = 0, $pad = '0')
+    {
+        for ($i = 4; $i > 0; $i--) {
+            if ($i > $position) {
+                $matches[$i] = $pad;
+            } elseif ($i == $position && $increment) {
+                $matches[$i] += $increment;
+                // If $matches[$i] was 0, carry the decrement
+                if ($matches[$i] < 0) {
+                    $matches[$i] = $pad;
+                    $position--;
+
+                    // Return null on a carry overflow
+                    if ($i == 1) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        return $matches[1] . '.' . $matches[2] . '.' . $matches[3] . '.' . $matches[4];
     }
 
     private function expandStability($stability)

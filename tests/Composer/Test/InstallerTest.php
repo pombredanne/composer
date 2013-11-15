@@ -1,4 +1,5 @@
 <?php
+
 /*
  * This file is part of Composer.
  *
@@ -17,15 +18,16 @@ use Composer\Config;
 use Composer\Json\JsonFile;
 use Composer\Repository\ArrayRepository;
 use Composer\Repository\RepositoryManager;
+use Composer\Repository\InstalledArrayRepository;
 use Composer\Package\RootPackageInterface;
 use Composer\Package\Link;
 use Composer\Package\Locker;
 use Composer\Test\Mock\FactoryMock;
 use Composer\Test\Mock\InstalledFilesystemRepositoryMock;
 use Composer\Test\Mock\InstallationManagerMock;
-use Composer\Test\Mock\WritableRepositoryMock;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\StreamOutput;
+use Composer\TestCase;
 
 class InstallerTest extends TestCase
 {
@@ -53,7 +55,7 @@ class InstallerTest extends TestCase
         $config = $this->getMock('Composer\Config');
 
         $repositoryManager = new RepositoryManager($io, $config);
-        $repositoryManager->setLocalRepository(new WritableRepositoryMock());
+        $repositoryManager->setLocalRepository(new InstalledArrayRepository());
 
         if (!is_array($repositories)) {
             $repositories = array($repositories);
@@ -65,7 +67,7 @@ class InstallerTest extends TestCase
         $locker = $this->getMockBuilder('Composer\Package\Locker')->disableOriginalConstructor()->getMock();
         $installationManager = new InstallationManagerMock();
 
-        $eventDispatcher = $this->getMockBuilder('Composer\Script\EventDispatcher')->disableOriginalConstructor()->getMock();
+        $eventDispatcher = $this->getMockBuilder('Composer\EventDispatcher\EventDispatcher')->disableOriginalConstructor()->getMock();
         $autoloadGenerator = $this->getMockBuilder('Composer\Autoload\AutoloadGenerator')->disableOriginalConstructor()->getMock();
 
         $installer = new Installer($io, $config, clone $rootPackage, $downloadManager, $repositoryManager, $locker, $installationManager, $eventDispatcher, $autoloadGenerator);
@@ -185,10 +187,10 @@ class InstallerTest extends TestCase
                 }));
         }
 
-        $locker = new Locker($lockJsonMock, $repositoryManager, $composer->getInstallationManager(), md5(json_encode($composerConfig)));
+        $locker = new Locker($io, $lockJsonMock, $repositoryManager, $composer->getInstallationManager(), md5(json_encode($composerConfig)));
         $composer->setLocker($locker);
 
-        $eventDispatcher = $this->getMockBuilder('Composer\Script\EventDispatcher')->disableOriginalConstructor()->getMock();
+        $eventDispatcher = $this->getMockBuilder('Composer\EventDispatcher\EventDispatcher')->disableOriginalConstructor()->getMock();
         $autoloadGenerator = $this->getMock('Composer\Autoload\AutoloadGenerator', array(), array($eventDispatcher));
         $composer->setAutoloadGenerator($autoloadGenerator);
         $composer->setEventDispatcher($eventDispatcher);
@@ -200,7 +202,9 @@ class InstallerTest extends TestCase
 
         $application = new Application;
         $application->get('install')->setCode(function ($input, $output) use ($installer) {
-            $installer->setDevMode($input->getOption('dev'));
+            $installer
+                ->setDevMode($input->getOption('dev'))
+                ->setDryRun($input->getOption('dry-run'));
 
             return $installer->run() ? 0 : 1;
         });
@@ -209,7 +213,9 @@ class InstallerTest extends TestCase
             $installer
                 ->setDevMode($input->getOption('dev'))
                 ->setUpdate(true)
-                ->setUpdateWhitelist($input->getArgument('packages'));
+                ->setDryRun($input->getOption('dry-run'))
+                ->setUpdateWhitelist($input->getArgument('packages'))
+                ->setWhitelistDependencies($input->getOption('with-dependencies'));
 
             return $installer->run() ? 0 : 1;
         });
@@ -226,6 +232,7 @@ class InstallerTest extends TestCase
 
         if ($expectLock) {
             unset($actualLock['hash']);
+            unset($actualLock['_readme']);
             $this->assertEquals($expectLock, $actualLock);
         }
 

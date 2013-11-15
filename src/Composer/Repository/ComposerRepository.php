@@ -63,7 +63,7 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
         }
 
         $urlBits = parse_url($repoConfig['url']);
-        if (empty($urlBits['scheme']) || empty($urlBits['host'])) {
+        if ($urlBits === false || empty($urlBits['scheme'])) {
             throw new \UnexpectedValueException('Invalid url given for Composer repository: '.$repoConfig['url']);
         }
 
@@ -200,6 +200,9 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
     public function loadPackage(array $data)
     {
         $package = $this->createPackage($data['raw'], 'Composer\Package\Package');
+        if ($package instanceof AliasPackage) {
+            $package = $package->getAliasOf();
+        }
         $package->setRepository($this);
 
         return $package;
@@ -240,7 +243,7 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
         }
 
         // skip platform packages
-        if (preg_match('{^(?:php(?:-64bit)?|(?:ext|lib)-[^/]+)$}i', $name) || '__root__' === $name) {
+        if (preg_match(PlatformRepository::PLATFORM_PACKAGE_REGEX, $name) || '__root__' === $name) {
             return array();
         }
 
@@ -295,6 +298,25 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
                         }
                     }
                 } else {
+                    if (isset($version['provide']) || isset($version['replace'])) {
+                        // collect names
+                        $names = array(
+                            strtolower($version['name']) => true,
+                        );
+                        if (isset($version['provide'])) {
+                            foreach ($version['provide'] as $target => $constraint) {
+                                $names[strtolower($target)] = true;
+                            }
+                        }
+                        if (isset($version['replace'])) {
+                            foreach ($version['replace'] as $target => $constraint) {
+                                $names[strtolower($target)] = true;
+                            }
+                        }
+                        $names = array_keys($names);
+                    } else {
+                        $names = array(strtolower($version['name']));
+                    }
                     if (!$pool->isPackageAcceptable(strtolower($version['name']), VersionParser::parseStability($version['version']))) {
                         continue;
                     }
@@ -303,16 +325,18 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
                     $package = $this->createPackage($version, 'Composer\Package\Package');
                     $package->setRepository($this);
 
-                    $this->providers[$name][$version['uid']] = $package;
-                    $this->providersByUid[$version['uid']] = $package;
+                    if ($package instanceof AliasPackage) {
+                        $aliased = $package->getAliasOf();
+                        $aliased->setRepository($this);
 
-                    if ($package->getAlias()) {
-                        $alias = $this->createAliasPackage($package);
-                        $alias->setRepository($this);
+                        $this->providers[$name][$version['uid']] = $aliased;
+                        $this->providers[$name][$version['uid'].'-alias'] = $package;
 
-                        $this->providers[$name][$version['uid'].'-alias'] = $alias;
                         // override provider with its alias so it can be expanded in the if block above
-                        $this->providersByUid[$version['uid']] = $alias;
+                        $this->providersByUid[$version['uid']] = $package;
+                    } else {
+                        $this->providers[$name][$version['uid']] = $package;
+                        $this->providersByUid[$version['uid']] = $package;
                     }
 
                     // handle root package aliases
@@ -320,8 +344,8 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
 
                     if (isset($this->rootAliases[$name][$package->getVersion()])) {
                         $rootAliasData = $this->rootAliases[$name][$package->getVersion()];
-                    } elseif (($aliasNormalized = $package->getAlias()) && isset($this->rootAliases[$name][$aliasNormalized])) {
-                        $rootAliasData = $this->rootAliases[$name][$aliasNormalized];
+                    } elseif ($package instanceof AliasPackage && isset($this->rootAliases[$name][$package->getAliasOf()->getVersion()])) {
+                        $rootAliasData = $this->rootAliases[$name][$package->getAliasOf()->getVersion()];
                     }
 
                     if (isset($rootAliasData)) {
@@ -494,7 +518,9 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
     protected function createPackage(array $data, $class)
     {
         try {
-            $data['notification-url'] = $this->notifyUrl;
+            if (!isset($data['notification-url'])) {
+                $data['notification-url'] = $this->notifyUrl;
+            }
 
             return $this->loader->load($data, 'Composer\Package\CompletePackage');
         } catch (\Exception $e) {
@@ -515,7 +541,7 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
                 $json = $this->rfs->getContents($filename, $filename, false);
                 if ($sha256 && $sha256 !== hash('sha256', $json)) {
                     if ($retries) {
-                        usleep(100);
+                        usleep(100000);
 
                         continue;
                     }
@@ -529,7 +555,7 @@ class ComposerRepository extends ArrayRepository implements StreamableRepository
                 break;
             } catch (\Exception $e) {
                 if ($retries) {
-                    usleep(100);
+                    usleep(100000);
                     continue;
                 }
 

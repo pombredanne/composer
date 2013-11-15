@@ -13,6 +13,7 @@
 namespace Composer\Util;
 
 use Symfony\Component\Process\Process;
+use Composer\IO\IOInterface;
 
 /**
  * @author Robert Schönthal <seroscho@googlemail.com>
@@ -23,6 +24,12 @@ class ProcessExecutor
 
     protected $captureOutput;
     protected $errorOutput;
+    protected $io;
+
+    public function __construct(IOInterface $io = null)
+    {
+        $this->io = $io;
+    }
 
     /**
      * runs a process on the commandline
@@ -35,6 +42,17 @@ class ProcessExecutor
      */
     public function execute($command, &$output = null, $cwd = null)
     {
+        if ($this->io && $this->io->isDebug()) {
+            $safeCommand = preg_replace('{(://[^:/\s]+:)[^@\s/]+}i', '$1****', $command);
+            $this->io->write('Executing command ('.($cwd ?: 'CWD').'): '.$safeCommand);
+        }
+
+        // make sure that null translate to the proper directory in case the dir is a symlink
+        // and we call a git command, because msysgit does not handle symlinks properly
+        if (null === $cwd && defined('PHP_WINDOWS_VERSION_BUILD') && false !== strpos($command, 'git') && getcwd()) {
+            $cwd = realpath(getcwd());
+        }
+
         $this->captureOutput = count(func_get_args()) > 1;
         $this->errorOutput = null;
         $process = new Process($command, $cwd, null, null, static::getTimeout());
@@ -53,6 +71,8 @@ class ProcessExecutor
 
     public function splitLines($output)
     {
+        $output = trim($output);
+
         return ((string) $output === '') ? array() : preg_split('{\r?\n}', $output);
     }
 

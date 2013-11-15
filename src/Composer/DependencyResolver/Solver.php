@@ -321,7 +321,7 @@ class Solver
     private function selectAndInstall($level, array $decisionQueue, $disableRules, Rule $rule)
     {
         // choose best package to install from decisionQueue
-        $literals = $this->policy->selectPreferedPackages($this->pool, $this->installedMap, $decisionQueue);
+        $literals = $this->policy->selectPreferedPackages($this->pool, $this->installedMap, $decisionQueue, $rule->getRequiredPackage());
 
         $selectedLiteral = array_shift($literals);
 
@@ -756,7 +756,6 @@ class Solver
 
                 if ($lastLiteral) {
                     unset($this->branches[$lastBranchIndex][self::BRANCH_LITERALS][$lastBranchOffset]);
-                    array_values($this->branches[$lastBranchIndex][self::BRANCH_LITERALS]);
 
                     $level = $lastLevel;
                     $this->revert($level);

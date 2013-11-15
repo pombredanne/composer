@@ -51,7 +51,7 @@ class GitHub
      */
     public function authorizeOAuth($originUrl)
     {
-        if ('github.com' !== $originUrl) {
+        if (!in_array($originUrl, $this->config->get('github-domains'))) {
             return false;
         }
 
@@ -68,13 +68,17 @@ class GitHub
     /**
      * Authorizes a GitHub domain interactively via OAuth
      *
-     * @param  string $originUrl The host this GitHub instance is located at
-     * @param  string $message   The reason this authorization is required
-     * @return bool   true on success
+     * @param  string                        $originUrl The host this GitHub instance is located at
+     * @param  string                        $message   The reason this authorization is required
+     * @throws \RuntimeException
+     * @throws TransportException|\Exception
+     * @return bool                          true on success
      */
     public function authorizeOAuthInteractively($originUrl, $message = null)
     {
         $attemptCounter = 0;
+
+        $apiUrl = ('github.com' === $originUrl) ? 'api.github.com' : $originUrl . '/api/v3';
 
         if ($message) {
             $this->io->write($message);
@@ -93,7 +97,7 @@ class GitHub
                     $appName .= ' on ' . trim($output);
                 }
 
-                $contents = JsonFile::parseJson($this->remoteFilesystem->getContents($originUrl, 'https://api.github.com/authorizations', false, array(
+                $contents = JsonFile::parseJson($this->remoteFilesystem->getContents($originUrl, 'https://'. $apiUrl . '/authorizations', false, array(
                     'http' => array(
                         'method' => 'POST',
                         'follow_location' => false,

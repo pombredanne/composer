@@ -42,6 +42,19 @@ class Filesystem
     }
 
     /**
+     * Checks if a directory is empty
+     *
+     * @param  string $dir
+     * @return bool
+     */
+    public function isDirEmpty($dir)
+    {
+        $dir = rtrim($dir, '/\\');
+
+        return count(glob($dir.'/*') ?: array()) === 0 && count(glob($dir.'/.*') ?: array()) === 2;
+    }
+
+    /**
      * Recursively remove a directory
      *
      * Uses the process component if proc_open is enabled on the PHP
@@ -54,6 +67,10 @@ class Filesystem
     {
         if (!is_dir($directory)) {
             return true;
+        }
+
+        if (preg_match('{^(?:[a-z]:)?[/\\\\]+$}i', $directory)) {
+            throw new \RuntimeException('Aborting an attempted deletion of '.$directory.', this was probably not intended, if it is a real use case please report it.');
         }
 
         if (!function_exists('proc_open')) {
@@ -129,15 +146,12 @@ class Filesystem
     {
         $it = new RecursiveDirectoryIterator($source, RecursiveDirectoryIterator::SKIP_DOTS);
         $ri = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::SELF_FIRST);
-
-        if ( !file_exists($target)) {
-            mkdir($target, 0777, true);
-        }
+        $this->ensureDirectoryExists($target);
 
         foreach ($ri as $file) {
             $targetPath = $target . DIRECTORY_SEPARATOR . $ri->getSubPathName();
             if ($file->isDir()) {
-                mkdir($targetPath);
+                $this->ensureDirectoryExists($targetPath);
             } else {
                 copy($file->getPathname(), $targetPath);
             }
@@ -159,31 +173,40 @@ class Filesystem
         if (defined('PHP_WINDOWS_VERSION_BUILD')) {
             // Try to copy & delete - this is a workaround for random "Access denied" errors.
             $command = sprintf('xcopy %s %s /E /I /Q', escapeshellarg($source), escapeshellarg($target));
-            if (0 === $this->processExecutor->execute($command, $output)) {
+            $result = $this->processExecutor->execute($command, $output);
+
+            // clear stat cache because external processes aren't tracked by the php stat cache
+            clearstatcache();
+
+            if (0 === $result) {
                 $this->remove($source);
 
                 return;
             }
-
-            return $this->copyThenRemove($source, $target);
         } else {
             // We do not use PHP's "rename" function here since it does not support
             // the case where $source, and $target are located on different partitions.
             $command = sprintf('mv %s %s', escapeshellarg($source), escapeshellarg($target));
-            if (0 === $this->processExecutor->execute($command)) {
+            $result = $this->processExecutor->execute($command, $output);
+
+            // clear stat cache because external processes aren't tracked by the php stat cache
+            clearstatcache();
+
+            if (0 === $result) {
                 return;
             }
         }
 
-        throw new \RuntimeException(sprintf('Could not rename "%s" to "%s".', $source, $target));
+        return $this->copyThenRemove($source, $target);
     }
 
     /**
      * Returns the shortest path from $from to $to
      *
-     * @param  string $from
-     * @param  string $to
-     * @param  bool   $directories if true, the source/target are considered to be directories
+     * @param  string                    $from
+     * @param  string                    $to
+     * @param  bool                      $directories if true, the source/target are considered to be directories
+     * @throws \InvalidArgumentException
      * @return string
      */
     public function findShortestPath($from, $to, $directories = false)
@@ -192,8 +215,8 @@ class Filesystem
             throw new \InvalidArgumentException(sprintf('$from (%s) and $to (%s) must be absolute paths.', $from, $to));
         }
 
-        $from = lcfirst(rtrim(strtr($from, '\\', '/'), '/'));
-        $to = lcfirst(rtrim(strtr($to, '\\', '/'), '/'));
+        $from = lcfirst($this->normalizePath($from));
+        $to = lcfirst($this->normalizePath($to));
 
         if ($directories) {
             $from .= '/dummy_file';
@@ -204,11 +227,11 @@ class Filesystem
         }
 
         $commonPath = $to;
-        while (strpos($from, $commonPath) !== 0 && '/' !== $commonPath && !preg_match('{^[a-z]:/?$}i', $commonPath) && '.' !== $commonPath) {
+        while (strpos($from.'/', $commonPath.'/') !== 0 && '/' !== $commonPath && !preg_match('{^[a-z]:/?$}i', $commonPath)) {
             $commonPath = strtr(dirname($commonPath), '\\', '/');
         }
 
-        if (0 !== strpos($from, $commonPath) || '/' === $commonPath || '.' === $commonPath) {
+        if (0 !== strpos($from, $commonPath) || '/' === $commonPath) {
             return $to;
         }
 
@@ -222,9 +245,10 @@ class Filesystem
     /**
      * Returns PHP code that, when executed in $from, will return the path to $to
      *
-     * @param  string $from
-     * @param  string $to
-     * @param  bool   $directories if true, the source/target are considered to be directories
+     * @param  string                    $from
+     * @param  string                    $to
+     * @param  bool                      $directories if true, the source/target are considered to be directories
+     * @throws \InvalidArgumentException
      * @return string
      */
     public function findShortestPathCode($from, $to, $directories = false)
@@ -233,15 +257,15 @@ class Filesystem
             throw new \InvalidArgumentException(sprintf('$from (%s) and $to (%s) must be absolute paths.', $from, $to));
         }
 
-        $from = lcfirst(strtr($from, '\\', '/'));
-        $to = lcfirst(strtr($to, '\\', '/'));
+        $from = lcfirst($this->normalizePath($from));
+        $to = lcfirst($this->normalizePath($to));
 
         if ($from === $to) {
             return $directories ? '__DIR__' : '__FILE__';
         }
 
         $commonPath = $to;
-        while (strpos($from, $commonPath) !== 0 && '/' !== $commonPath && !preg_match('{^[a-z]:/?$}i', $commonPath) && '.' !== $commonPath) {
+        while (strpos($from.'/', $commonPath.'/') !== 0 && '/' !== $commonPath && !preg_match('{^[a-z]:/?$}i', $commonPath) && '.' !== $commonPath) {
             $commonPath = strtr(dirname($commonPath), '\\', '/');
         }
 
@@ -275,7 +299,8 @@ class Filesystem
      * Returns size of a file or directory specified by path. If a directory is
      * given, it's size will be computed recursively.
      *
-     * @param  string $path Path to the file or directory
+     * @param  string            $path Path to the file or directory
+     * @throws \RuntimeException
      * @return int
      */
     public function size($path)
@@ -288,6 +313,44 @@ class Filesystem
         }
 
         return filesize($path);
+    }
+
+    /**
+     * Normalize a path. This replaces backslashes with slashes, removes ending
+     * slash and collapses redundant separators and up-level references.
+     *
+     * @param  string $path Path to the file or directory
+     * @return string
+     */
+    public function normalizePath($path)
+    {
+        $parts = array();
+        $path = strtr($path, '\\', '/');
+        $prefix = '';
+        $absolute = false;
+
+        if (preg_match('{^([0-9a-z]+:(?://(?:[a-z]:)?)?)}i', $path, $match)) {
+            $prefix = $match[1];
+            $path = substr($path, strlen($prefix));
+        }
+
+        if (substr($path, 0, 1) === '/') {
+            $absolute = true;
+            $path = substr($path, 1);
+        }
+
+        $up = false;
+        foreach (explode('/', $path) as $chunk) {
+            if ('..' === $chunk && ($absolute || $up)) {
+                array_pop($parts);
+                $up = !(empty($parts) || '..' === end($parts));
+            } elseif ('.' !== $chunk && '' !== $chunk) {
+                $parts[] = $chunk;
+                $up = '..' !== $chunk;
+            }
+        }
+
+        return $prefix.($absolute ? '/' : '').implode('/', $parts);
     }
 
     protected function directorySize($directory)

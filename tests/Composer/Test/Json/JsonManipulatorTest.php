@@ -128,6 +128,67 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
 }
 '
             ),
+            array(
+                '{
+    "require": {
+        "foo": "bar"
+    },
+    "repositories": [{
+        "type": "package",
+        "package": {
+            "require": {
+                "foo": "bar"
+            }
+        }
+    }]
+}',
+                'require',
+                'foo',
+                'qux',
+                '{
+    "require": {
+        "foo": "qux"
+    },
+    "repositories": [{
+        "type": "package",
+        "package": {
+            "require": {
+                "foo": "bar"
+            }
+        }
+    }]
+}
+'
+            ),
+            array(
+                '{
+    "repositories": [{
+        "type": "package",
+        "package": {
+            "require": {
+                "foo": "bar"
+            }
+        }
+    }]
+}',
+                'require',
+                'foo',
+                'qux',
+                '{
+    "repositories": [{
+        "type": "package",
+        "package": {
+            "require": {
+                "foo": "bar"
+            }
+        }
+    }],
+    "require": {
+        "foo": "qux"
+    }
+}
+'
+            ),
         );
     }
 
@@ -311,37 +372,37 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
     public function testAddRepositoryCanInitializeEmptyRepositories()
     {
         $manipulator = new JsonManipulator('{
-    "repositories": {
-    }
+  "repositories": {
+  }
 }');
 
         $this->assertTrue($manipulator->addRepository('bar', array('type' => 'composer')));
         $this->assertEquals('{
-    "repositories": {
-        "bar": {
-            "type": "composer"
-        }
+  "repositories": {
+    "bar": {
+      "type": "composer"
     }
+  }
 }
 ', $manipulator->getContents());
     }
 
     public function testAddRepositoryCanInitializeFromScratch()
     {
-        $manipulator = new JsonManipulator('{
-    "a": "b"
-}');
+        $manipulator = new JsonManipulator("{
+\t\"a\": \"b\"
+}");
 
         $this->assertTrue($manipulator->addRepository('bar2', array('type' => 'composer')));
-        $this->assertEquals('{
-    "a": "b",
-    "repositories": {
-        "bar2": {
-            "type": "composer"
-        }
-    }
+        $this->assertEquals("{
+\t\"a\": \"b\",
+\t\"repositories\": {
+\t\t\"bar2\": {
+\t\t\t\"type\": \"composer\"
+\t\t}
+\t}
 }
-', $manipulator->getContents());
+", $manipulator->getContents());
     }
 
     public function testAddRepositoryCanAdd()
@@ -610,6 +671,57 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
             "github.com": "foo"
         }
     }
+}
+', $manipulator->getContents());
+    }
+
+    public function testAddMainKey()
+    {
+        $manipulator = new JsonManipulator('{
+    "foo": "bar"
+}');
+
+        $this->assertTrue($manipulator->addMainKey('bar', 'baz'));
+        $this->assertEquals('{
+    "foo": "bar",
+    "bar": "baz"
+}
+', $manipulator->getContents());
+    }
+
+    public function testUpdateMainKey()
+    {
+        $manipulator = new JsonManipulator('{
+    "foo": "bar"
+}');
+
+        $this->assertTrue($manipulator->addMainKey('foo', 'baz'));
+        $this->assertEquals('{
+    "foo": "baz"
+}
+', $manipulator->getContents());
+    }
+
+    public function testUpdateMainKey2()
+    {
+        $manipulator = new JsonManipulator('{
+    "a": {
+        "foo": "bar",
+        "baz": "qux"
+    },
+    "foo": "bar",
+    "baz": "bar"
+}');
+
+        $this->assertTrue($manipulator->addMainKey('foo', 'baz'));
+        $this->assertTrue($manipulator->addMainKey('baz', 'quux'));
+        $this->assertEquals('{
+    "a": {
+        "foo": "bar",
+        "baz": "qux"
+    },
+    "foo": "baz",
+    "baz": "quux"
 }
 ', $manipulator->getContents());
     }

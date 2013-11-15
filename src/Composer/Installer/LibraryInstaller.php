@@ -14,7 +14,6 @@ namespace Composer\Installer;
 
 use Composer\Composer;
 use Composer\IO\IOInterface;
-use Composer\Downloader\DownloadManager;
 use Composer\Repository\InstalledRepositoryInterface;
 use Composer\Package\PackageInterface;
 use Composer\Util\Filesystem;
@@ -41,15 +40,16 @@ class LibraryInstaller implements InstallerInterface
      * @param IOInterface $io
      * @param Composer    $composer
      * @param string      $type
+     * @param Filesystem  $filesystem
      */
-    public function __construct(IOInterface $io, Composer $composer, $type = 'library')
+    public function __construct(IOInterface $io, Composer $composer, $type = 'library', Filesystem $filesystem = null)
     {
         $this->composer = $composer;
         $this->downloadManager = $composer->getDownloadManager();
         $this->io = $io;
         $this->type = $type;
 
-        $this->filesystem = new Filesystem();
+        $this->filesystem = $filesystem ?: new Filesystem();
         $this->vendorDir = rtrim($composer->getConfig()->get('vendor-dir'), '/');
         $this->binDir = rtrim($composer->getConfig()->get('bin-dir'), '/');
     }
@@ -116,8 +116,6 @@ class LibraryInstaller implements InstallerInterface
     public function uninstall(InstalledRepositoryInterface $repo, PackageInterface $package)
     {
         if (!$repo->hasPackage($package)) {
-            // TODO throw exception again here, when update is fixed and we don't have to remove+install (see #125)
-            return;
             throw new \InvalidArgumentException('Package is not installed: '.$package);
         }
 
@@ -140,12 +138,14 @@ class LibraryInstaller implements InstallerInterface
     public function getInstallPath(PackageInterface $package)
     {
         $targetDir = $package->getTargetDir();
+
         return $this->getPackageBasePath($package) . ($targetDir ? '/'.$targetDir : '');
     }
 
     protected function getPackageBasePath(PackageInterface $package)
     {
         $this->initializeVendorDir();
+
         return ($this->vendorDir ? $this->vendorDir.'/' : '') . $package->getPrettyName();
     }
 
@@ -157,8 +157,23 @@ class LibraryInstaller implements InstallerInterface
 
     protected function updateCode(PackageInterface $initial, PackageInterface $target)
     {
-        $downloadPath = $this->getInstallPath($initial);
-        $this->downloadManager->update($initial, $target, $downloadPath);
+        $initialDownloadPath = $this->getInstallPath($initial);
+        $targetDownloadPath = $this->getInstallPath($target);
+        if ($targetDownloadPath !== $initialDownloadPath) {
+            // if the target and initial dirs intersect, we force a remove + install
+            // to avoid the rename wiping the target dir as part of the initial dir cleanup
+            if (substr($initialDownloadPath, 0, strlen($targetDownloadPath)) === $targetDownloadPath
+                || substr($targetDownloadPath, 0, strlen($initialDownloadPath)) === $initialDownloadPath
+            ) {
+                $this->removeCode($initial);
+                $this->installCode($target);
+
+                return;
+            }
+
+            $this->filesystem->rename($initialDownloadPath, $targetDownloadPath);
+        }
+        $this->downloadManager->update($initial, $target, $targetDownloadPath);
     }
 
     protected function removeCode(PackageInterface $package)
@@ -185,6 +200,12 @@ class LibraryInstaller implements InstallerInterface
                 continue;
             }
 
+            // in case a custom installer returned a relative path for the
+            // $package, we can now safely turn it into a absolute path (as we
+            // already checked the binary's existence). The following helpers
+            // will require absolute paths to work properly.
+            $binPath = realpath($binPath);
+
             $this->initializeBinDir();
             $link = $this->binDir.'/'.basename($bin);
             if (file_exists($link)) {
@@ -192,7 +213,7 @@ class LibraryInstaller implements InstallerInterface
                     // likely leftover from a previous install, make sure
                     // that the target is still executable in case this
                     // is a fresh install of the vendor.
-                    chmod($link, 0777 & ~umask());
+                    @chmod($link, 0777 & ~umask());
                 }
                 $this->io->write('    Skipped installation of '.$bin.' for package '.$package->getName().': name conflicts with an existing file');
                 continue;
@@ -201,7 +222,7 @@ class LibraryInstaller implements InstallerInterface
                 // add unixy support for cygwin and similar environments
                 if ('.bat' !== substr($binPath, -4)) {
                     file_put_contents($link, $this->generateUnixyProxyCode($binPath, $link));
-                    chmod($link, 0777 & ~umask());
+                    @chmod($link, 0777 & ~umask());
                     $link .= '.bat';
                     if (file_exists($link)) {
                         $this->io->write('    Skipped installation of '.$bin.'.bat proxy for package '.$package->getName().': a .bat proxy was already installed');
@@ -217,13 +238,15 @@ class LibraryInstaller implements InstallerInterface
                     // when using it in smbfs mounted folder
                     $relativeBin = $this->filesystem->findShortestPath($link, $binPath);
                     chdir(dirname($link));
-                    symlink($relativeBin, $link);
+                    if (false === symlink($relativeBin, $link)) {
+                        throw new \ErrorException();
+                    }
                 } catch (\ErrorException $e) {
                     file_put_contents($link, $this->generateUnixyProxyCode($binPath, $link));
                 }
                 chdir($cwd);
             }
-            chmod($link, 0777 & ~umask());
+            @chmod($link, 0777 & ~umask());
         }
     }
 
@@ -273,7 +296,7 @@ class LibraryInstaller implements InstallerInterface
         }
 
         return "@ECHO OFF\r\n".
-            "SET BIN_TARGET=%~dp0\\".escapeshellarg(dirname($binPath)).'\\'.basename($binPath)."\r\n".
+            "SET BIN_TARGET=%~dp0/".trim(escapeshellarg($binPath), '"')."\r\n".
             "{$caller} \"%BIN_TARGET%\" %*\r\n";
     }
 

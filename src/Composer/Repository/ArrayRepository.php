@@ -14,6 +14,7 @@ namespace Composer\Repository;
 
 use Composer\Package\AliasPackage;
 use Composer\Package\PackageInterface;
+use Composer\Package\CompletePackageInterface;
 use Composer\Package\Version\VersionParser;
 
 /**
@@ -83,10 +84,15 @@ class ArrayRepository implements RepositoryInterface
 
         $matches = array();
         foreach ($this->getPackages() as $package) {
-            // TODO implement SEARCH_FULLTEXT handling with keywords/description matching
-            if (preg_match($regex, $package->getName())) {
-                $matches[] = array(
-                    'name' => $package->getName(),
+            $name = $package->getName();
+            if (isset($matches[$name])) {
+                continue;
+            }
+            if (preg_match($regex, $name)
+                || ($mode === self::SEARCH_FULLTEXT && $package instanceof CompletePackageInterface && preg_match($regex, implode(' ', (array) $package->getKeywords()) . ' ' . $package->getDescription()))
+            ) {
+                $matches[$name] = array(
+                    'name' => $package->getPrettyName(),
                     'description' => $package->getDescription(),
                 );
             }
@@ -124,18 +130,17 @@ class ArrayRepository implements RepositoryInterface
         $package->setRepository($this);
         $this->packages[] = $package;
 
-        // create alias package on the fly if needed
-        if ($package->getAlias()) {
-            $alias = $this->createAliasPackage($package);
-            if (!$this->hasPackage($alias)) {
-                $this->addPackage($alias);
+        if ($package instanceof AliasPackage) {
+            $aliasedPackage = $package->getAliasOf();
+            if (null === $aliasedPackage->getRepository()) {
+                $this->addPackage($aliasedPackage);
             }
         }
     }
 
-    protected function createAliasPackage(PackageInterface $package, $alias = null, $prettyAlias = null)
+    protected function createAliasPackage(PackageInterface $package, $alias, $prettyAlias)
     {
-        return new AliasPackage($package, $alias ?: $package->getAlias(), $prettyAlias ?: $package->getPrettyAlias());
+        return new AliasPackage($package instanceof AliasPackage ? $package->getAliasOf() : $package, $alias, $prettyAlias);
     }
 
     /**

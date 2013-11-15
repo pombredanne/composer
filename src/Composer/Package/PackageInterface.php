@@ -268,20 +268,6 @@ interface PackageInterface
     public function getBinaries();
 
     /**
-     * Returns a version this package should be aliased to
-     *
-     * @return string
-     */
-    public function getAlias();
-
-    /**
-     * Returns a non-normalized version this package should be aliased to
-     *
-     * @return string
-     */
-    public function getPrettyAlias();
-
-    /**
      * Returns package unique name, constructed from name and version.
      *
      * @return string
@@ -308,4 +294,11 @@ interface PackageInterface
      * @return string
      */
     public function getPrettyString();
+
+    /**
+     * Returns a list of patterns to exclude from package archives
+     *
+     * @return array
+     */
+    public function getArchiveExcludes();
 }

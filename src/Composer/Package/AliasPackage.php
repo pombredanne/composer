@@ -160,6 +160,8 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
      * Use by the policy for sorting manually aliased packages first, see #576
      *
      * @param bool $value
+     *
+     * @return mixed
      */
     public function setRootPackageAlias($value)
     {
@@ -173,22 +175,6 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     public function isRootPackageAlias()
     {
         return $this->rootPackageAlias;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getAlias()
-    {
-        return '';
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getPrettyAlias()
-    {
-        return '';
     }
 
     /***************************************
@@ -251,14 +237,6 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     {
         return $this->aliasOf->getScripts();
     }
-    public function setAliases(array $aliases)
-    {
-        return $this->aliasOf->setAliases($aliases);
-    }
-    public function getAliases()
-    {
-        return $this->aliasOf->getAliases();
-    }
     public function getLicense()
     {
         return $this->aliasOf->getLicense();
@@ -310,6 +288,10 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     public function getNotificationUrl()
     {
         return $this->aliasOf->getNotificationUrl();
+    }
+    public function getArchiveExcludes()
+    {
+        return $this->aliasOf->getArchiveExcludes();
     }
     public function __toString()
     {

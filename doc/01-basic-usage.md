@@ -58,31 +58,31 @@ smaller decoupled parts.
 
 ### Package Versions
 
-We are requiring version `1.0.*` of monolog. This means any version in the `1.0`
-development branch. It would match `1.0.0`, `1.0.2` or `1.0.20`.
+In the previous example we were requiring version `1.0.*` of monolog. This
+means any version in the `1.0` development branch. It would match `1.0.0`,
+`1.0.2` or `1.0.20`.
 
 Version constraints can be specified in a few different ways.
 
-* **Exact version:** You can specify the exact version of a package, for
-  example `1.0.2`.
+Name           | Example                                   | Description
+-------------- | ---------------------                     | -----------
+Exact version  | `1.0.2`                                   | You can specify the exact version of a package.
+Range          | `>=1.0` `>=1.0,<2.0` `>=1.0,<1.1 | >=1.2` | By using comparison operators you can specify ranges of valid versions. Valid operators are `>`, `>=`, `<`, `<=`, `!=`. <br />You can define multiple ranges, separated by a comma, which will be treated as a **logical AND**. A pipe symbol `|` will be treated as a **logical OR**. <br />AND has higher precedence than OR.
+Wildcard       | `1.0.*`                                   | You can specify a pattern with a `*` wildcard. `1.0.*` is the equivalent of `>=1.0,<1.1`.
+Tilde Operator | `~1.2`                                    | Very useful for projects that follow semantic versioning. `~1.2` is equivalent to `>=1.2,<2.0`. For more details, read the next section below.
 
-* **Range:** By using comparison operators you can specify ranges of valid
-  versions. Valid operators are `>`, `>=`, `<`, `<=`, `!=`. An example range
-  would be `>=1.0`. You can define multiple ranges, separated by a comma:
-  `>=1.0,<2.0`.
+### Next Significant Release (Tilde Operator)
 
-* **Wildcard:** You can specify a pattern with a `*` wildcard. `1.0.*` is the
-  equivalent of `>=1.0,<1.1`.
+The `~` operator is best explained by example: `~1.2` is equivalent to
+`>=1.2,<2.0`, while `~1.2.3` is equivalent to `>=1.2.3,<1.3`. As you can see
+it is mostly useful for projects respecting [semantic
+versioning](http://semver.org/). A common usage would be to mark the minimum
+minor version you depend on, like `~1.2` (which allows anything up to, but not
+including, 2.0). Since in theory there should be no backwards compatibility
+breaks until 2.0, that works well. Another way of looking at it is that using
+`~` specifies a minimum version, but allows the last digit specified to go up.
 
-* **Next Significant Release (Tilde Operator):** The `~` operator is best
-  explained by example: `~1.2` is equivalent to `>=1.2,<2.0`, while `~1.2.3` is
-  equivalent to `>=1.2.3,<1.3`. As you can see it is mostly useful for projects
-  respecting [semantic versioning](http://semver.org/). A common usage would be
-  to mark the minimum minor version you depend on, like `~1.2` (which allows
-  anything up to, but not including, 2.0). Since in theory there should be no
-  backwards compatibility breaks until 2.0, that works well. Another way of
-  looking at it is that using `~` specifies a minimum version, but allows the
-  last digit specified to go up.
+### Stability
 
 By default only stable releases are taken into consideration. If you would like
 to also get RC, beta, alpha or dev versions of your dependencies you can do
@@ -119,8 +119,15 @@ to those specific versions.
 
 This is important because the `install` command checks if a lock file is present,
 and if it is, it downloads the versions specified there (regardless of what `composer.json`
-says). This means that anyone who sets up the project will download the exact
-same version of the dependencies.
+says).
+
+This means that anyone who sets up the project will download the exact
+same version of the dependencies. Your CI server, production machines, other
+developers in your team, everything and everyone runs on the same dependencies, which
+mitigates the potential for bugs affecting only some parts of the deployments. Even if you
+develop alone, in six months when reinstalling the project you can feel confident the
+dependencies installed are still working even if your dependencies released
+many new versions since then.
 
 If no `composer.lock` file exists, Composer will read the dependencies and
 versions from `composer.json` and  create the lock file.
@@ -131,6 +138,10 @@ the latest matching versions (according to your `composer.json` file) and also u
 the lock file with the new version.
 
     $ php composer.phar update
+
+If you only want to install or update one dependency, you can whitelist them:
+
+    $ php composer.phar update monolog/monolog [...]
 
 > **Note:** For libraries it is not necessarily recommended to commit the lock file,
 > see also: [Libraries - Lock file](02-libraries.md#lock-file).
@@ -172,7 +183,7 @@ to `composer.json`.
 
     {
         "autoload": {
-            "psr-0": {"Acme": "src/"}
+            "psr-0": {"Acme\\": "src/"}
         }
     }
 
@@ -192,7 +203,7 @@ the return value of the include call in a variable and add more namespaces.
 This can be useful for autoloading classes in a test suite, for example.
 
     $loader = require 'vendor/autoload.php';
-    $loader->add('Acme\Test', __DIR__);
+    $loader->add('Acme\\Test\\', __DIR__);
 
 In addition to PSR-0 autoloading, classmap is also supported. This allows
 classes to be autoloaded even if they do not conform to PSR-0. See the

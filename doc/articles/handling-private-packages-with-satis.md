@@ -113,6 +113,8 @@ Example using a custom repository using SSH (requires the SSH2 PECL extension):
         ]
     }
 
+> **Tip:** See [ssh2 context options](http://www.php.net/manual/en/wrappers.ssh2.php#refsect1-wrappers.ssh2-options) for more information.
+
 Example using HTTP over SSL using a client certificate:
 
     {
@@ -122,9 +124,65 @@ Example using HTTP over SSL using a client certificate:
                 "url": "https://example.org",
                 "options": {
                     "ssl": {
-                        "cert_file": "/home/composer/.ssl/composer.pem",
+                        "local_cert": "/home/composer/.ssl/composer.pem"
                     }
                 }
             }
         ]
     }
+
+> **Tip:** See [ssl context options](http://www.php.net/manual/en/context.ssl.php) for more information.
+
+### Downloads
+
+When GitHub or BitBucket repositories are mirrored on your local satis, the build process will include
+the location of the downloads these platforms make available. This means that the repository and your setup depend
+on the availability of these services.
+
+At the same time, this implies that all code which is hosted somewhere else (on another service or for example in
+Subversion) will not have downloads available and thus installations usually take a lot longer.
+
+To enable your satis installation to create downloads for all (Git, Mercurial and Subversion) your packages, add the
+following to your `satis.json`:
+
+    {
+        "archive": {
+            "directory": "dist",
+            "format": "tar",
+            "prefix-url": "https://amazing.cdn.example.org",
+            "skip-dev": true
+        }
+    }
+
+#### Options explained
+
+ * `directory`: the location of the dist files (inside the `output-dir`)
+ * `format`: optional, `zip` (default) or `tar`
+ * `prefix-url`: optional, location of the downloads, homepage (from `satis.json`) followed by `directory` by default
+ * `skip-dev`: optional, `false` by default, when enabled (`true`) satis will not create downloads for branches
+
+Once enabled, all downloads (include those from GitHub and BitBucket) will be replaced with a _local_ version.
+
+#### prefix-url
+
+Prefixing the URL with another host is especially helpful if the downloads end up in a private Amazon S3
+bucket or on a CDN host. A CDN would drastically improve download times and therefore package installation.
+
+Example: A `prefix-url` of `http://my-bucket.s3.amazonaws.com` (and `directory` set to `dist`) creates download URLs
+which look like the following: `http://my-bucket.s3.amazonaws.com/dist/vendor-package-version-ref.zip`.
+
+
+### Resolving dependencies
+
+It is possible to make satis automatically resolve and add all dependencies for your projects. This can be used
+with the Downloads functionality to have a complete local mirror of packages. Just add the following
+to your `satis.json`:
+
+```
+{
+    "require-dependencies": true
+}
+```
+
+When searching for packages, satis will attempt to resolve all the required packages from the listed repositories.
+Therefore, if you are requiring a package from Packagist, you will need to define it in your `satis.json`.

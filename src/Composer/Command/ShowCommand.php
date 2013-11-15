@@ -12,13 +12,13 @@
 
 namespace Composer\Command;
 
-use Composer\Composer;
 use Composer\DependencyResolver\Pool;
 use Composer\DependencyResolver\DefaultPolicy;
 use Composer\Factory;
 use Composer\Package\CompletePackageInterface;
-use Composer\Package\LinkConstraint\VersionConstraint;
 use Composer\Package\Version\VersionParser;
+use Composer\Plugin\CommandEvent;
+use Composer\Plugin\PluginEvents;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
@@ -44,7 +44,7 @@ class ShowCommand extends Command
             ->setDescription('Show information about packages')
             ->setDefinition(array(
                 new InputArgument('package', InputArgument::OPTIONAL, 'Package to inspect'),
-                new InputArgument('version', InputArgument::OPTIONAL, 'Version to inspect'),
+                new InputArgument('version', InputArgument::OPTIONAL, 'Version or version constraint to inspect'),
                 new InputOption('installed', 'i', InputOption::VALUE_NONE, 'List installed packages only'),
                 new InputOption('platform', 'p', InputOption::VALUE_NONE, 'List platform packages only'),
                 new InputOption('available', 'a', InputOption::VALUE_NONE, 'List available packages only'),
@@ -67,8 +67,9 @@ EOT
         // init repos
         $platformRepo = new PlatformRepository;
 
+        $composer = $this->getComposer(false);
         if ($input->getOption('self')) {
-            $package = $this->getComposer(false)->getPackage();
+            $package = $this->getComposer()->getPackage();
             $repos = $installedRepo = new ArrayRepository(array($package));
         } elseif ($input->getOption('platform')) {
             $repos = $installedRepo = $platformRepo;
@@ -76,15 +77,14 @@ EOT
             $repos = $installedRepo = $this->getComposer()->getRepositoryManager()->getLocalRepository();
         } elseif ($input->getOption('available')) {
             $installedRepo = $platformRepo;
-            if ($composer = $this->getComposer(false)) {
+            if ($composer) {
                 $repos = new CompositeRepository($composer->getRepositoryManager()->getRepositories());
             } else {
                 $defaultRepos = Factory::createDefaultRepositories($this->getIO());
                 $repos = new CompositeRepository($defaultRepos);
                 $output->writeln('No composer.json found in the current directory, showing available packages from ' . implode(', ', array_keys($defaultRepos)));
             }
-        } elseif ($composer = $this->getComposer(false)) {
-            $composer = $this->getComposer();
+        } elseif ($composer) {
             $localRepo = $composer->getRepositoryManager()->getLocalRepository();
             $installedRepo = new CompositeRepository(array($localRepo, $platformRepo));
             $repos = new CompositeRepository(array_merge(array($installedRepo), $composer->getRepositoryManager()->getRepositories()));
@@ -93,6 +93,11 @@ EOT
             $output->writeln('No composer.json found in the current directory, showing available packages from ' . implode(', ', array_keys($defaultRepos)));
             $installedRepo = $platformRepo;
             $repos = new CompositeRepository(array_merge(array($installedRepo), $defaultRepos));
+        }
+
+        if ($composer) {
+            $commandEvent = new CommandEvent(PluginEvents::COMMAND, 'show', $input, $output);
+            $composer->getEventDispatcher()->dispatch($commandEvent->getName(), $commandEvent);
         }
 
         // show single package or single version
@@ -179,6 +184,11 @@ EOT
                     }
                 }
                 list($width) = $this->getApplication()->getTerminalDimensions();
+                if (null === $width) {
+                    // In case the width is not detected, we're probably running the command
+                    // outside of a real terminal, use space without a limit
+                    $width = PHP_INT_MAX;
+                }
                 if (defined('PHP_WINDOWS_VERSION_BUILD')) {
                     $width--;
                 }
@@ -228,8 +238,7 @@ EOT
         $name = strtolower($name);
         $constraint = null;
         if ($version) {
-            $version = $this->versionParser->normalize($version);
-            $constraint = new VersionConstraint('=', $version);
+            $constraint = $this->versionParser->parseConstraints($version);
         }
 
         $policy = new DefaultPolicy();
@@ -237,6 +246,7 @@ EOT
         $pool->addRepository($repos);
 
         $matchedPackage = null;
+        $versions = array();
         $matches = $pool->whatProvides($name, $constraint);
         foreach ($matches as $index => $package) {
             // skip providers/replacers
@@ -250,19 +260,13 @@ EOT
                 $matchedPackage = $package;
             }
 
+            $versions[$package->getPrettyVersion()] = $package->getVersion();
             $matches[$index] = $package->getId();
         }
 
         // select prefered package according to policy rules
         if (!$matchedPackage && $matches && $prefered = $policy->selectPreferedPackages($pool, array(), $matches)) {
             $matchedPackage = $pool->literalToPackage($prefered[0]);
-        }
-
-        // build versions array
-        $versions = array();
-        foreach ($matches as $package) {
-            $package = $pool->literalToPackage($package);
-            $versions[$package->getPrettyVersion()] = $package->getVersion();
         }
 
         return array($matchedPackage, $versions);
@@ -297,7 +301,7 @@ EOT
 
                 if ($type === 'psr-0') {
                     foreach ($autoloads as $name => $path) {
-                        $output->writeln(($name ?: '*') . ' => ' . ($path ?: '.'));
+                        $output->writeln(($name ?: '*') . ' => ' . (is_array($path) ? implode(', ', $path) : ($path ?: '.')));
                     }
                 } elseif ($type === 'classmap') {
                     $output->writeln(implode(', ', $autoloads));
@@ -315,12 +319,6 @@ EOT
      */
     protected function printVersions(InputInterface $input, OutputInterface $output, CompletePackageInterface $package, array $versions, RepositoryInterface $installedRepo, RepositoryInterface $repos)
     {
-        if ($input->getArgument('version')) {
-            $output->writeln('<info>version</info>  : ' . $package->getPrettyVersion());
-
-            return;
-        }
-
         uasort($versions, 'version_compare');
         $versions = array_keys(array_reverse($versions));
 

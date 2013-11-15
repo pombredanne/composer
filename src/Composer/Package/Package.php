@@ -36,9 +36,6 @@ class Package extends BasePackage
     protected $releaseDate;
     protected $extra = array();
     protected $binaries = array();
-    protected $aliases = array();
-    protected $alias;
-    protected $prettyAlias;
     protected $dev;
     protected $stability;
     protected $notificationUrl;
@@ -51,6 +48,7 @@ class Package extends BasePackage
     protected $suggests = array();
     protected $autoload = array();
     protected $includePaths = array();
+    protected $archiveExcludes = array();
 
     /**
      * Creates a new in memory package.
@@ -152,54 +150,6 @@ class Package extends BasePackage
     public function getBinaries()
     {
         return $this->binaries;
-    }
-
-    /**
-     * @param array $aliases
-     */
-    public function setAliases(array $aliases)
-    {
-        $this->aliases = $aliases;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getAliases()
-    {
-        return $this->aliases;
-    }
-
-    /**
-     * @param string $alias
-     */
-    public function setAlias($alias)
-    {
-        $this->alias = $alias;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getAlias()
-    {
-        return $this->alias;
-    }
-
-    /**
-     * @param string $prettyAlias
-     */
-    public function setPrettyAlias($prettyAlias)
-    {
-        $this->prettyAlias = $prettyAlias;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function getPrettyAlias()
-    {
-        return $this->prettyAlias;
     }
 
     /**
@@ -349,7 +299,7 @@ class Package extends BasePackage
     /**
      * Set the releaseDate
      *
-     * @param DateTime $releaseDate
+     * @param \DateTime $releaseDate
      */
     public function setReleaseDate(\DateTime $releaseDate)
     {
@@ -524,5 +474,23 @@ class Package extends BasePackage
     public function getNotificationUrl()
     {
         return $this->notificationUrl;
+    }
+
+    /**
+     * Sets a list of patterns to be excluded from archives
+     *
+     * @param array $excludes
+     */
+    public function setArchiveExcludes(array $excludes)
+    {
+        $this->archiveExcludes = $excludes;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getArchiveExcludes()
+    {
+        return $this->archiveExcludes;
     }
 }

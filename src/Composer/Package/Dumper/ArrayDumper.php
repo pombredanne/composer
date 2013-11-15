@@ -16,7 +16,6 @@ use Composer\Package\BasePackage;
 use Composer\Package\PackageInterface;
 use Composer\Package\CompletePackageInterface;
 use Composer\Package\RootPackageInterface;
-use Composer\Package\Link;
 
 /**
  * @author Konstantin Kudryashiv <ever.zet@gmail.com>
@@ -56,6 +55,10 @@ class ArrayDumper
             $data['dist']['url'] = $package->getDistUrl();
             $data['dist']['reference'] = $package->getDistReference();
             $data['dist']['shasum'] = $package->getDistSha1Checksum();
+        }
+
+        if ($package->getArchiveExcludes()) {
+            $data['archive']['exclude'] = $package->getArchiveExcludes();
         }
 
         foreach (BasePackage::$supportedLinkTypes as $type => $opts) {

@@ -21,6 +21,8 @@ use Composer\Repository\ArrayRepository;
 use Composer\Package\Dumper\ArrayDumper;
 use Composer\Package\Loader\ArrayLoader;
 use Composer\Package\Version\VersionParser;
+use Composer\Util\Git as GitUtil;
+use Composer\IO\IOInterface;
 
 /**
  * Reads/writes project lockfile (composer.lock).
@@ -36,24 +38,27 @@ class Locker
     private $hash;
     private $loader;
     private $dumper;
+    private $process;
     private $lockDataCache;
 
     /**
      * Initializes packages locker.
      *
+     * @param IOInterface         $io
      * @param JsonFile            $lockFile            lockfile loader
      * @param RepositoryManager   $repositoryManager   repository manager instance
      * @param InstallationManager $installationManager installation manager instance
      * @param string              $hash                unique hash of the current composer configuration
      */
-    public function __construct(JsonFile $lockFile, RepositoryManager $repositoryManager, InstallationManager $installationManager, $hash)
+    public function __construct(IOInterface $io, JsonFile $lockFile, RepositoryManager $repositoryManager, InstallationManager $installationManager, $hash)
     {
-        $this->lockFile          = $lockFile;
+        $this->lockFile = $lockFile;
         $this->repositoryManager = $repositoryManager;
         $this->installationManager = $installationManager;
         $this->hash = $hash;
         $this->loader = new ArrayLoader();
         $this->dumper = new ArrayDumper();
+        $this->process = new ProcessExecutor($io);
     }
 
     /**
@@ -85,26 +90,10 @@ class Locker
     }
 
     /**
-     * Checks whether the lock file is in the new complete format or not
-     *
-     * @return bool
-     */
-    public function isCompleteFormat()
-    {
-        $lockData = $this->getLockData();
-        $lockedPackages = $lockData['packages'];
-
-        if (empty($lockedPackages) || isset($lockedPackages[0]['name'])) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
      * Searches and returns an array of locked packages, retrieved from registered repositories.
      *
      * @param  bool                                     $withDevReqs true to retrieve the locked dev packages
+     * @throws \RuntimeException
      * @return \Composer\Repository\RepositoryInterface
      */
     public function getLockedRepository($withDevReqs = false)
@@ -117,7 +106,7 @@ class Locker
             if (isset($lockData['packages-dev'])) {
                 $lockedPackages = array_merge($lockedPackages, $lockData['packages-dev']);
             } else {
-                throw new \RuntimeException('The lock file does not contain require-dev information, run install without --dev or run update to install those packages.');
+                throw new \RuntimeException('The lock file does not contain require-dev information, run install with the --no-dev option or run update to install those packages.');
             }
         }
 
@@ -133,56 +122,13 @@ class Locker
             return $packages;
         }
 
-        // legacy lock file support
-        $repo = $this->repositoryManager->getLocalRepository();
-        foreach ($lockedPackages as $info) {
-            $resolvedVersion = !empty($info['alias-version']) ? $info['alias-version'] : $info['version'];
-
-            // try to find the package in the local repo (best match)
-            $package = $repo->findPackage($info['package'], $resolvedVersion);
-
-            // try to find the package in any repo
-            if (!$package) {
-                $package = $this->repositoryManager->findPackage($info['package'], $resolvedVersion);
-            }
-
-            // try to find the package in any repo (second pass without alias + rebuild alias since it disappeared)
-            if (!$package && !empty($info['alias-version'])) {
-                $package = $this->repositoryManager->findPackage($info['package'], $info['version']);
-                if ($package) {
-                    $package->setAlias($info['alias-version']);
-                    $package->setPrettyAlias($info['alias-pretty-version']);
-                }
-            }
-
-            if (!$package) {
-                throw new \LogicException(sprintf(
-                    'Can not find "%s-%s" package in registered repositories',
-                    $info['package'], $info['version']
-                ));
-            }
-
-            $package = clone $package;
-            if (!empty($info['time'])) {
-                $package->setReleaseDate($info['time']);
-            }
-            if (!empty($info['source-reference'])) {
-                $package->setSourceReference($info['source-reference']);
-                if (is_callable($package, 'setDistReference')) {
-                    $package->setDistReference($info['source-reference']);
-                }
-            }
-
-            $packages->addPackage($package);
-        }
-
-        return $packages;
+        throw new \RuntimeException('Your composer.lock was created before 2012-09-15, and is not supported anymore. Run "composer update" to generate a new one.');
     }
 
     /**
      * Returns the platform requirements stored in the lock file
      *
-     * @param bool $withDevReqs if true, the platform requirements from the require-dev block are also returned
+     * @param  bool                     $withDevReqs if true, the platform requirements from the require-dev block are also returned
      * @return \Composer\Package\Link[]
      */
     public function getPlatformRequirements($withDevReqs = false)
@@ -264,6 +210,7 @@ class Locker
     public function setLockData(array $packages, $devPackages, array $platformReqs, $platformDevReqs, array $aliases, $minimumStability, array $stabilityFlags)
     {
         $lock = array(
+            '_readme' => array('This file locks the dependencies of your project to a known state', 'Read more about it at http://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file'),
             'hash' => $this->hash,
             'packages' => null,
             'packages-dev' => null,
@@ -333,7 +280,7 @@ class Locker
             // always move time to the end of the package definition
             $time = isset($spec['time']) ? $spec['time'] : null;
             unset($spec['time']);
-            if ($package->isDev()) {
+            if ($package->isDev() && $package->getInstallationSource() === 'source') {
                 // use the exact commit time of the current reference if it's a dev package
                 $time = $this->getPackageTime($package) ?: $time;
             }
@@ -364,7 +311,7 @@ class Locker
      * Returns the packages's datetime for its source reference.
      *
      * @param  PackageInterface $package The package to scan.
-     * @return string|null               The formatted datetime or null if none was found.
+     * @return string|null      The formatted datetime or null if none was found.
      */
     private function getPackageTime(PackageInterface $package)
     {
@@ -372,23 +319,24 @@ class Locker
             return null;
         }
 
-        $path = $this->installationManager->getInstallPath($package);
+        $path = realpath($this->installationManager->getInstallPath($package));
         $sourceType = $package->getSourceType();
         $datetime = null;
 
         if ($path && in_array($sourceType, array('git', 'hg'))) {
             $sourceRef = $package->getSourceReference() ?: $package->getDistReference();
-            $process = new ProcessExecutor();
-
             switch ($sourceType) {
                 case 'git':
-                    if (0 === $process->execute('git log -n1 --pretty=%ct '.escapeshellarg($sourceRef), $output, $path) && preg_match('{^\s*\d+\s*$}', $output)) {
+                    $util = new GitUtil;
+                    $util->cleanEnv();
+
+                    if (0 === $this->process->execute('git log -n1 --pretty=%ct '.escapeshellarg($sourceRef), $output, $path) && preg_match('{^\s*\d+\s*$}', $output)) {
                         $datetime = new \DateTime('@'.trim($output), new \DateTimeZone('UTC'));
                     }
                     break;
 
                 case 'hg':
-                    if (0 === $process->execute('hg log --template "{date|hgdate}" -r '.escapeshellarg($sourceRef), $output, $path) && preg_match('{^\s*(\d+)\s*}', $output, $match)) {
+                    if (0 === $this->process->execute('hg log --template "{date|hgdate}" -r '.escapeshellarg($sourceRef), $output, $path) && preg_match('{^\s*(\d+)\s*}', $output, $match)) {
                         $datetime = new \DateTime('@'.$match[1], new \DateTimeZone('UTC'));
                     }
                     break;

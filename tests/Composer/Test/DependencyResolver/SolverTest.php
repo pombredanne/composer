@@ -18,7 +18,7 @@ use Composer\DependencyResolver\Request;
 use Composer\DependencyResolver\Solver;
 use Composer\DependencyResolver\SolverProblemsException;
 use Composer\Package\Link;
-use Composer\Test\TestCase;
+use Composer\TestCase;
 use Composer\Package\LinkConstraint\MultiConstraint;
 
 class SolverTest extends TestCase
@@ -75,6 +75,7 @@ class SolverTest extends TestCase
         } catch (SolverProblemsException $e) {
             $problems = $e->getProblems();
             $this->assertEquals(1, count($problems));
+            $this->assertEquals(2, $e->getCode());
             $this->assertEquals("\n    - The requested package b could not be found in any version, there may be a typo in the package name.", $problems[0]->getPrettyString());
         }
     }
@@ -404,7 +405,7 @@ class SolverTest extends TestCase
     {
         $this->repoInstalled->addPackage($packageA = $this->getPackage('A', '1.0'));
         $this->repo->addPackage($packageB = $this->getPackage('B', '1.0'));
-        $packageB->setReplaces(array('a' => new Link('B', 'A', null)));
+        $packageB->setReplaces(array('a' => new Link('B', 'A', new MultiConstraint(array()))));
 
         $this->reposComplete();
 
@@ -674,9 +675,9 @@ class SolverTest extends TestCase
 
             $msg = "\n";
             $msg .= "  Problem 1\n";
-            $msg .= "    - Installation request for a -> satisfiable by A 1.0.\n";
-            $msg .= "    - B 1.0 conflicts with A 1.0.\n";
-            $msg .= "    - Installation request for b -> satisfiable by B 1.0.\n";
+            $msg .= "    - Installation request for a -> satisfiable by A[1.0].\n";
+            $msg .= "    - B 1.0 conflicts with A[1.0].\n";
+            $msg .= "    - Installation request for b -> satisfiable by B[1.0].\n";
             $this->assertEquals($msg, $e->getMessage());
         }
     }
@@ -704,7 +705,7 @@ class SolverTest extends TestCase
 
             $msg = "\n";
             $msg .= "  Problem 1\n";
-            $msg .= "    - Installation request for a -> satisfiable by A 1.0.\n";
+            $msg .= "    - Installation request for a -> satisfiable by A[1.0].\n";
             $msg .= "    - A 1.0 requires b >= 2.0 -> no matching package found.\n\n";
             $msg .= "Potential causes:\n";
             $msg .= " - A typo in the package name\n";
@@ -749,12 +750,12 @@ class SolverTest extends TestCase
 
             $msg = "\n";
             $msg .= "  Problem 1\n";
-            $msg .= "    - C 1.0 requires d >= 1.0 -> satisfiable by D 1.0.\n";
-            $msg .= "    - D 1.0 requires b < 1.0 -> satisfiable by B 0.9.\n";
-            $msg .= "    - B 1.0 requires c >= 1.0 -> satisfiable by C 1.0.\n";
-            $msg .= "    - Can only install one of: B 0.9, B 1.0.\n";
-            $msg .= "    - A 1.0 requires b >= 1.0 -> satisfiable by B 1.0.\n";
-            $msg .= "    - Installation request for a -> satisfiable by A 1.0.\n";
+            $msg .= "    - C 1.0 requires d >= 1.0 -> satisfiable by D[1.0].\n";
+            $msg .= "    - D 1.0 requires b < 1.0 -> satisfiable by B[0.9].\n";
+            $msg .= "    - B 1.0 requires c >= 1.0 -> satisfiable by C[1.0].\n";
+            $msg .= "    - Can only install one of: B[0.9, 1.0].\n";
+            $msg .= "    - A 1.0 requires b >= 1.0 -> satisfiable by B[1.0].\n";
+            $msg .= "    - Installation request for a -> satisfiable by A[1.0].\n";
             $this->assertEquals($msg, $e->getMessage());
         }
     }

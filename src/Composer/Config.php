@@ -24,7 +24,7 @@ class Config
         'use-include-path' => false,
         'preferred-install' => 'auto',
         'notify-on-install' => true,
-        'github-protocols' => array('git', 'https', 'http'),
+        'github-protocols' => array('git', 'https'),
         'vendor-dir' => 'vendor',
         'bin-dir' => '{$vendor-dir}/bin',
         'cache-dir' => '{$home}/cache',
@@ -35,6 +35,8 @@ class Config
         'cache-files-ttl' => null, // fallback to cache-ttl
         'cache-files-maxsize' => '300MiB',
         'discard-changes' => false,
+        'prepend-autoloader' => true,
+        'github-domains' => array('github.com'),
     );
 
     public static $defaultRepositories = array(
@@ -122,7 +124,8 @@ class Config
     /**
      * Returns a setting
      *
-     * @param  string $key
+     * @param  string            $key
+     * @throws \RuntimeException
      * @return mixed
      */
     public function get($key)
@@ -177,10 +180,31 @@ class Config
                 return rtrim($this->process($this->config[$key]), '/\\');
 
             case 'discard-changes':
+                if ($env = getenv('COMPOSER_DISCARD_CHANGES')) {
+                    if (!in_array($env, array('stash', 'true', 'false', '1', '0'), true)) {
+                        throw new \RuntimeException(
+                            "Invalid value for COMPOSER_DISCARD_CHANGES: {$env}. Expected 1, 0, true, false or stash"
+                        );
+                    }
+                    if ('stash' === $env) {
+                        return 'stash';
+                    }
+
+                    // convert string value to bool
+                    return $env !== 'false' && (bool) $env;
+                }
+
                 if (!in_array($this->config[$key], array(true, false, 'stash'), true)) {
                     throw new \RuntimeException(
-                        "Invalid value for 'discard-changes': {$this->config[$key]}"
+                        "Invalid value for 'discard-changes': {$this->config[$key]}. Expected true, false or stash"
                     );
+                }
+
+                return $this->config[$key];
+
+            case 'github-protocols':
+                if (reset($this->config['github-protocols']) === 'http') {
+                    throw new \RuntimeException('The http protocol for github is not available anymore, update your config\'s github-protocols to use "https" or "git"');
                 }
 
                 return $this->config[$key];
