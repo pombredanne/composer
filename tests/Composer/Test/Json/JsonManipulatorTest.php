@@ -189,6 +189,47 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
 }
 '
             ),
+            array(
+                '{
+    "require": {
+        "php": "5.*"
+    }
+}',
+                'require-dev',
+                'foo',
+                'qux',
+                '{
+    "require": {
+        "php": "5.*"
+    },
+    "require-dev": {
+        "foo": "qux"
+    }
+}
+'
+            ),
+            array(
+                '{
+    "require": {
+        "php": "5.*"
+    },
+    "require-dev": {
+        "foo": "bar"
+    }
+}',
+                'require-dev',
+                'foo',
+                'qux',
+                '{
+    "require": {
+        "php": "5.*"
+    },
+    "require-dev": {
+        "foo": "qux"
+    }
+}
+'
+            ),
         );
     }
 
@@ -303,6 +344,71 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
         "baz": {
             "foo": "bar",
             "bar": "baz"
+        }
+    }
+}
+'
+            ),
+            'works on undefined ones' => array(
+                '{
+    "repositories": {
+        "main": {
+            "foo": "bar",
+            "bar": "baz"
+        }
+    }
+}',
+                'removenotthere',
+                true,
+                '{
+    "repositories": {
+        "main": {
+            "foo": "bar",
+            "bar": "baz"
+        }
+    }
+}
+'
+            ),
+            'works on child having unmatched name' => array(
+                '{
+    "repositories": {
+        "baz": {
+            "foo": "bar",
+            "bar": "baz"
+        }
+    }
+}',
+                'bar',
+                true,
+                '{
+    "repositories": {
+        "baz": {
+            "foo": "bar",
+            "bar": "baz"
+        }
+    }
+}
+'
+            ),
+            'works on child having duplicate name' => array(
+                '{
+    "repositories": {
+        "foo": {
+            "baz": "qux"
+        },
+        "baz": {
+            "foo": "bar",
+            "bar": "baz"
+        }
+    }
+}',
+                'baz',
+                true,
+                '{
+    "repositories": {
+        "foo": {
+            "baz": "qux"
         }
     }
 }
@@ -722,6 +828,29 @@ class JsonManipulatorTest extends \PHPUnit_Framework_TestCase
     },
     "foo": "baz",
     "baz": "quux"
+}
+', $manipulator->getContents());
+    }
+
+    public function testUpdateMainKey3()
+    {
+        $manipulator = new JsonManipulator('{
+    "require": {
+        "php": "5.*"
+    },
+    "require-dev": {
+        "foo": "bar"
+    }
+}');
+
+        $this->assertTrue($manipulator->addMainKey('require-dev', array('foo' => 'qux')));
+        $this->assertEquals('{
+    "require": {
+        "php": "5.*"
+    },
+    "require-dev": {
+        "foo": "qux"
+    }
 }
 ', $manipulator->getContents());
     }

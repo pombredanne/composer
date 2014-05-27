@@ -209,6 +209,10 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     {
         return $this->aliasOf->getSourceUrl();
     }
+    public function getSourceUrls()
+    {
+        return $this->aliasOf->getSourceUrls();
+    }
     public function getSourceReference()
     {
         return $this->aliasOf->getSourceReference();
@@ -216,6 +220,14 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     public function setSourceReference($reference)
     {
         return $this->aliasOf->setSourceReference($reference);
+    }
+    public function setSourceMirrors($mirrors)
+    {
+        return $this->aliasOf->setSourceMirrors($mirrors);
+    }
+    public function getSourceMirrors()
+    {
+        return $this->aliasOf->getSourceMirrors();
     }
     public function getDistType()
     {
@@ -225,6 +237,10 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     {
         return $this->aliasOf->getDistUrl();
     }
+    public function getDistUrls()
+    {
+        return $this->aliasOf->getDistUrls();
+    }
     public function getDistReference()
     {
         return $this->aliasOf->getDistReference();
@@ -232,6 +248,22 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     public function getDistSha1Checksum()
     {
         return $this->aliasOf->getDistSha1Checksum();
+    }
+    public function setTransportOptions(array $options)
+    {
+        return $this->aliasOf->setTransportOptions($options);
+    }
+    public function getTransportOptions()
+    {
+        return $this->aliasOf->getTransportOptions();
+    }
+    public function setDistMirrors($mirrors)
+    {
+        return $this->aliasOf->setDistMirrors($mirrors);
+    }
+    public function getDistMirrors()
+    {
+        return $this->aliasOf->getDistMirrors();
     }
     public function getScripts()
     {
@@ -244,6 +276,10 @@ class AliasPackage extends BasePackage implements CompletePackageInterface
     public function getAutoload()
     {
         return $this->aliasOf->getAutoload();
+    }
+    public function getDevAutoload()
+    {
+        return $this->aliasOf->getDevAutoload();
     }
     public function getIncludePaths()
     {

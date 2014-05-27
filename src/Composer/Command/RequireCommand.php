@@ -42,6 +42,8 @@ class RequireCommand extends InitCommand
                 new InputOption('prefer-dist', null, InputOption::VALUE_NONE, 'Forces installation from package dist even for dev versions.'),
                 new InputOption('no-progress', null, InputOption::VALUE_NONE, 'Do not output download progress.'),
                 new InputOption('no-update', null, InputOption::VALUE_NONE, 'Disables the automatic update of the dependencies.'),
+                new InputOption('update-no-dev', null, InputOption::VALUE_NONE, 'Run the dependency update with the --no-dev option.'),
+                new InputOption('update-with-dependencies', null, InputOption::VALUE_NONE, 'Allows inherited dependencies to be updated with explicit dependencies.'),
             ))
             ->setHelp(<<<EOT
 The require command adds required packages to your composer.json and installs them
@@ -80,6 +82,7 @@ EOT
         $requirements = $this->determineRequirements($input, $output, $input->getArgument('packages'));
 
         $requireKey = $input->getOption('dev') ? 'require-dev' : 'require';
+        $removeKey = $input->getOption('dev') ? 'require' : 'require-dev';
         $baseRequirements = array_key_exists($requireKey, $composer) ? $composer[$requireKey] : array();
         $requirements = $this->formatRequirements($requirements);
 
@@ -89,9 +92,13 @@ EOT
             $versionParser->parseConstraints($constraint);
         }
 
-        if (!$this->updateFileCleanly($json, $baseRequirements, $requirements, $requireKey)) {
+        if (!$this->updateFileCleanly($json, $baseRequirements, $requirements, $requireKey, $removeKey)) {
             foreach ($requirements as $package => $version) {
                 $baseRequirements[$package] = $version;
+
+                if (isset($composer[$removeKey][$package])) {
+                    unset($composer[$removeKey][$package]);
+                }
             }
 
             $composer[$requireKey] = $baseRequirements;
@@ -103,6 +110,7 @@ EOT
         if ($input->getOption('no-update')) {
             return 0;
         }
+        $updateDevMode = !$input->getOption('update-no-dev');
 
         // Update packages
         $composer = $this->getComposer();
@@ -118,22 +126,22 @@ EOT
             ->setVerbose($input->getOption('verbose'))
             ->setPreferSource($input->getOption('prefer-source'))
             ->setPreferDist($input->getOption('prefer-dist'))
-            ->setDevMode(true)
+            ->setDevMode($updateDevMode)
             ->setUpdate(true)
-            ->setUpdateWhitelist(array_keys($requirements));
+            ->setUpdateWhitelist(array_keys($requirements))
+            ->setWhitelistDependencies($input->getOption('update-with-dependencies'));
         ;
 
-        if (!$install->run()) {
+        $status = $install->run();
+        if ($status !== 0) {
             $output->writeln("\n".'<error>Installation failed, reverting '.$file.' to its original content.</error>');
             file_put_contents($json->getPath(), $composerBackup);
-
-            return 1;
         }
 
-        return 0;
+        return $status;
     }
 
-    private function updateFileCleanly($json, array $base, array $new, $requireKey)
+    private function updateFileCleanly($json, array $base, array $new, $requireKey, $removeKey)
     {
         $contents = file_get_contents($json->getPath());
 
@@ -141,6 +149,9 @@ EOT
 
         foreach ($new as $package => $constraint) {
             if (!$manipulator->addLink($requireKey, $package, $constraint)) {
+                return false;
+            }
+            if (!$manipulator->removeSubNode($removeKey, $package)) {
                 return false;
             }
         }

@@ -19,7 +19,7 @@ class ArrayLoaderTest extends \PHPUnit_Framework_TestCase
 {
     public function setUp()
     {
-        $this->loader = new ArrayLoader();
+        $this->loader = new ArrayLoader(null, true);
     }
 
     public function testSelfVersion()
@@ -117,6 +117,7 @@ class ArrayLoaderTest extends \PHPUnit_Framework_TestCase
             'archive' => array(
                 'exclude' => array('/foo/bar', 'baz', '!/foo/bar/baz'),
             ),
+            'transport-options' => array('ssl' => array('local_cert' => '/opt/certs/test.pem'))
         );
 
         $package = $this->loader->load($config);

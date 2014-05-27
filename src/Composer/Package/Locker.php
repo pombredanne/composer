@@ -56,7 +56,7 @@ class Locker
         $this->repositoryManager = $repositoryManager;
         $this->installationManager = $installationManager;
         $this->hash = $hash;
-        $this->loader = new ArrayLoader();
+        $this->loader = new ArrayLoader(null, true);
         $this->dumper = new ArrayDumper();
         $this->process = new ProcessExecutor($io);
     }
@@ -210,7 +210,9 @@ class Locker
     public function setLockData(array $packages, $devPackages, array $platformReqs, $platformDevReqs, array $aliases, $minimumStability, array $stabilityFlags)
     {
         $lock = array(
-            '_readme' => array('This file locks the dependencies of your project to a known state', 'Read more about it at http://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file'),
+            '_readme' => array('This file locks the dependencies of your project to a known state',
+                               'Read more about it at http://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file',
+                               'This file is @gener'.'ated automatically'),
             'hash' => $this->hash,
             'packages' => null,
             'packages-dev' => null,
@@ -327,8 +329,7 @@ class Locker
             $sourceRef = $package->getSourceReference() ?: $package->getDistReference();
             switch ($sourceType) {
                 case 'git':
-                    $util = new GitUtil;
-                    $util->cleanEnv();
+                    GitUtil::cleanEnv();
 
                     if (0 === $this->process->execute('git log -n1 --pretty=%ct '.escapeshellarg($sourceRef), $output, $path) && preg_match('{^\s*\d+\s*$}', $output)) {
                         $datetime = new \DateTime('@'.trim($output), new \DateTimeZone('UTC'));

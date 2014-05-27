@@ -21,7 +21,7 @@ use Composer\Plugin\PluginInterface;
  */
 class PlatformRepository extends ArrayRepository
 {
-    const PLATFORM_PACKAGE_REGEX = '{^(?:php(?:-64bit)?|(?:ext|lib)-[^/]+)$}i';
+    const PLATFORM_PACKAGE_REGEX = '{^(?:php(?:-64bit)?|hhvm|(?:ext|lib)-[^/]+)$}i';
 
     protected function initialize()
     {
@@ -70,7 +70,8 @@ class PlatformRepository extends ArrayRepository
                 $version = $versionParser->normalize($prettyVersion);
             }
 
-            $ext = new CompletePackage('ext-'.$name, $version, $prettyVersion);
+            $packageName = $this->buildPackageName($name);
+            $ext = new CompletePackage($packageName, $version, $prettyVersion);
             $ext->setDescription('The '.$name.' PHP extension');
             parent::addPackage($ext);
         }
@@ -145,12 +146,12 @@ class PlatformRepository extends ArrayRepository
             parent::addPackage($lib);
         }
 
-        if (defined('HPHP_VERSION')) {
+        if (defined('HHVM_VERSION')) {
             try {
-                $prettyVersion = HPHP_VERSION;
+                $prettyVersion = HHVM_VERSION;
                 $version = $versionParser->normalize($prettyVersion);
             } catch (\UnexpectedValueException $e) {
-                $prettyVersion = preg_replace('#^([^~+-]+).*$#', '$1', HPHP_VERSION);
+                $prettyVersion = preg_replace('#^([^~+-]+).*$#', '$1', HHVM_VERSION);
                 $version = $versionParser->normalize($prettyVersion);
             }
 
@@ -158,5 +159,11 @@ class PlatformRepository extends ArrayRepository
             $hhvm->setDescription('The HHVM Runtime (64bit)');
             parent::addPackage($hhvm);
         }
+    }
+
+
+    private function buildPackageName($name)
+    {
+        return 'ext-' . str_replace(' ', '-', $name);
     }
 }

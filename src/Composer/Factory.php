@@ -220,8 +220,15 @@ class Factory
         // setup process timeout
         ProcessExecutor::setTimeout((int) $config->get('process-timeout'));
 
+        // initialize composer
+        $composer = new Composer();
+        $composer->setConfig($config);
+
+        // initialize event dispatcher
+        $dispatcher = new EventDispatcher($composer, $io);
+
         // initialize repository manager
-        $rm = $this->createRepositoryManager($io, $config);
+        $rm = $this->createRepositoryManager($io, $config, $dispatcher);
 
         // load local repository
         $this->addLocalRepository($rm, $vendorDir);
@@ -234,15 +241,10 @@ class Factory
         // initialize installation manager
         $im = $this->createInstallationManager();
 
-        // initialize composer
-        $composer = new Composer();
-        $composer->setConfig($config);
+        // Composer composition
         $composer->setPackage($package);
         $composer->setRepositoryManager($rm);
         $composer->setInstallationManager($im);
-
-        // initialize event dispatcher
-        $dispatcher = new EventDispatcher($composer, $io);
 
         // initialize download manager
         $dm = $this->createDownloadManager($io, $config, $dispatcher);
@@ -251,7 +253,7 @@ class Factory
         $composer->setEventDispatcher($dispatcher);
 
         // initialize autoload generator
-        $generator = new AutoloadGenerator($dispatcher);
+        $generator = new AutoloadGenerator($dispatcher, $io);
         $composer->setAutoloadGenerator($generator);
 
         // add installers to the manager
@@ -273,7 +275,7 @@ class Factory
             $lockFile = "json" === pathinfo($composerFile, PATHINFO_EXTENSION)
                 ? substr($composerFile, 0, -4).'lock'
                 : $composerFile . '.lock';
-            $locker = new Package\Locker($io, new JsonFile($lockFile, new RemoteFilesystem($io)), $rm, $im, md5_file($composerFile));
+            $locker = new Package\Locker($io, new JsonFile($lockFile, new RemoteFilesystem($io, $config)), $rm, $im, md5_file($composerFile));
             $composer->setLocker($locker);
         }
 
@@ -283,11 +285,12 @@ class Factory
     /**
      * @param  IOInterface                  $io
      * @param  Config                       $config
+     * @param  EventDispatcher              $eventDispatcher
      * @return Repository\RepositoryManager
      */
-    protected function createRepositoryManager(IOInterface $io, Config $config)
+    protected function createRepositoryManager(IOInterface $io, Config $config, EventDispatcher $eventDispatcher = null)
     {
-        $rm = new RepositoryManager($io, $config);
+        $rm = new RepositoryManager($io, $config, $eventDispatcher);
         $rm->setRepositoryClass('composer', 'Composer\Repository\ComposerRepository');
         $rm->setRepositoryClass('vcs', 'Composer\Repository\VcsRepository');
         $rm->setRepositoryClass('package', 'Composer\Repository\PackageRepository');
@@ -341,7 +344,7 @@ class Factory
             $cache = new Cache($io, $config->get('cache-files-dir'), 'a-z0-9_./');
         }
 
-        $dm = new Downloader\DownloadManager();
+        $dm = new Downloader\DownloadManager($io);
         switch ($config->get('preferred-install')) {
             case 'dist':
                 $dm->setPreferDist(true);
@@ -362,6 +365,7 @@ class Factory
         $dm->setDownloader('zip', new Downloader\ZipDownloader($io, $config, $eventDispatcher, $cache));
         $dm->setDownloader('rar', new Downloader\RarDownloader($io, $config, $eventDispatcher, $cache));
         $dm->setDownloader('tar', new Downloader\TarDownloader($io, $config, $eventDispatcher, $cache));
+        $dm->setDownloader('gzip', new Downloader\GzipDownloader($io, $config, $eventDispatcher, $cache));
         $dm->setDownloader('phar', new Downloader\PharDownloader($io, $config, $eventDispatcher, $cache));
         $dm->setDownloader('file', new Downloader\FileDownloader($io, $config, $eventDispatcher, $cache));
 

@@ -49,8 +49,13 @@ class GitHubDriver extends VcsDriver
         preg_match('#^(?:(?:https?|git)://([^/]+)/|git@([^:]+):)([^/]+)/(.+?)(?:\.git)?$#', $this->url, $match);
         $this->owner = $match[3];
         $this->repository = $match[4];
-        $this->originUrl = isset($match[1]) ? $match[1] : $match[2];
+        $this->originUrl = !empty($match[1]) ? $match[1] : $match[2];
         $this->cache = new Cache($this->io, $this->config->get('cache-repo-dir').'/'.$this->originUrl.'/'.$this->owner.'/'.$this->repository);
+
+        if (isset($this->repoConfig['no-api']) && $this->repoConfig['no-api']) {
+            $this->setupGitDriver($this->url);
+            return;
+        }
 
         $this->fetchRootIdentifier();
     }
@@ -117,10 +122,6 @@ class GitHubDriver extends VcsDriver
      */
     public function getDist($identifier)
     {
-        if ($this->gitDriver) {
-            return $this->gitDriver->getDist($identifier);
-        }
-
         $url = $this->getApiUrl() . '/repos/'.$this->owner.'/'.$this->repository.'/zipball/'.$identifier;
 
         return array('type' => 'zip', 'url' => $url, 'reference' => $identifier, 'shasum' => '');
@@ -197,12 +198,17 @@ class GitHubDriver extends VcsDriver
             return $this->gitDriver->getTags();
         }
         if (null === $this->tags) {
-            $resource = $this->getApiUrl() . '/repos/'.$this->owner.'/'.$this->repository.'/tags';
-            $tagsData = JsonFile::parseJson($this->getContents($resource), $resource);
             $this->tags = array();
-            foreach ($tagsData as $tag) {
-                $this->tags[$tag['name']] = $tag['commit']['sha'];
-            }
+            $resource = $this->getApiUrl() . '/repos/'.$this->owner.'/'.$this->repository.'/tags?per_page=100';
+
+            do {
+                $tagsData = JsonFile::parseJson($this->getContents($resource), $resource);
+                foreach ($tagsData as $tag) {
+                    $this->tags[$tag['name']] = $tag['commit']['sha'];
+                }
+
+                $resource = $this->getNextPage();
+            } while ($resource);
         }
 
         return $this->tags;
@@ -217,13 +223,18 @@ class GitHubDriver extends VcsDriver
             return $this->gitDriver->getBranches();
         }
         if (null === $this->branches) {
-            $resource = $this->getApiUrl() . '/repos/'.$this->owner.'/'.$this->repository.'/git/refs/heads';
-            $branchData = JsonFile::parseJson($this->getContents($resource), $resource);
             $this->branches = array();
-            foreach ($branchData as $branch) {
-                $name = substr($branch['ref'], 11);
-                $this->branches[$name] = $branch['object']['sha'];
-            }
+            $resource = $this->getApiUrl() . '/repos/'.$this->owner.'/'.$this->repository.'/git/refs/heads?per_page=100';
+
+            do {
+                $branchData = JsonFile::parseJson($this->getContents($resource), $resource);
+                foreach ($branchData as $branch) {
+                    $name = substr($branch['ref'], 11);
+                    $this->branches[$name] = $branch['object']['sha'];
+                }
+
+                $resource = $this->getNextPage();
+            } while ($resource);
         }
 
         return $this->branches;
@@ -238,7 +249,7 @@ class GitHubDriver extends VcsDriver
             return false;
         }
 
-        $originUrl = isset($matches[2]) ? $matches[2] : $matches[3];
+        $originUrl = !empty($matches[2]) ? $matches[2] : $matches[3];
         if (!in_array($originUrl, $config->get('github-domains'))) {
             return false;
         }
@@ -405,14 +416,7 @@ class GitHubDriver extends VcsDriver
             // GitHub returns 404 for private repositories) and we
             // cannot ask for authentication credentials (because we
             // are not interactive) then we fallback to GitDriver.
-            $this->gitDriver = new GitDriver(
-                array('url' => $this->generateSshUrl()),
-                $this->io,
-                $this->config,
-                $this->process,
-                $this->remoteFilesystem
-            );
-            $this->gitDriver->initialize();
+            $this->setupGitDriver($this->generateSshUrl());
 
             return;
         } catch (\RuntimeException $e) {
@@ -420,6 +424,33 @@ class GitHubDriver extends VcsDriver
 
             $this->io->write('<error>Failed to clone the '.$this->generateSshUrl().' repository, try running in interactive mode so that you can enter your GitHub credentials</error>');
             throw $e;
+        }
+    }
+
+    protected function setupGitDriver($url)
+    {
+        $this->gitDriver = new GitDriver(
+            array('url' => $url),
+            $this->io,
+            $this->config,
+            $this->process,
+            $this->remoteFilesystem
+        );
+        $this->gitDriver->initialize();
+    }
+
+    protected function getNextPage()
+    {
+        $headers = $this->remoteFilesystem->getLastHeaders();
+        foreach ($headers as $header) {
+            if (substr($header, 0, 5) === 'Link:') {
+                $links = explode(',', substr($header, 5));
+                foreach ($links as $link) {
+                    if (preg_match('{<(.+?)>; *rel="next"}', $link, $match)) {
+                        return $match[1];
+                    }
+                }
+            }
         }
     }
 }
